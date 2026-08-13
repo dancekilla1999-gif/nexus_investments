@@ -15,6 +15,7 @@ import { parseDurationToMs } from '../common/utils/duration.util';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RequestMeta } from '../common/types/request-meta';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -30,11 +31,7 @@ import {
 } from './totp.util';
 import * as argon2 from 'argon2';
 
-export interface RequestMeta {
-  ip?: string;
-  userAgent?: string;
-  deviceId?: string;
-}
+export type { RequestMeta };
 
 export interface TokensResponse {
   accessToken: string;

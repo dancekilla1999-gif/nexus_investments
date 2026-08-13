@@ -1,11 +1,13 @@
 import { useAuthStore } from './auth-store';
 import { clearStoredRefreshToken, getStoredRefreshToken, storeRefreshToken } from './session';
 import {
+  AcceptanceStatus,
   ApiErrorBody,
   Device,
   LoginResponse,
   Profile,
   PublicUser,
+  RiskDisclosureAgreement,
   TokensResponse,
   UpdateProfileInput,
 } from './types';
@@ -133,6 +135,14 @@ export const api = {
 
   disable2fa: (code: string) =>
     request<void>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) }),
+
+  getCurrentRiskDisclosureAgreement: () =>
+    request<RiskDisclosureAgreement>('/legal/risk-disclosure/current'),
+
+  getRiskDisclosureStatus: () => request<AcceptanceStatus>('/legal/risk-disclosure/status'),
+
+  acceptRiskDisclosureAgreement: () =>
+    request<AcceptanceStatus>('/legal/risk-disclosure/accept', { method: 'POST' }),
 
   refreshAccessToken,
 };

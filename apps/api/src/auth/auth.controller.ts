@@ -5,21 +5,14 @@ import { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtPayload } from '../common/types/authenticated-request';
-import { AuthService, RequestMeta } from './auth.service';
+import { extractRequestMeta as requestMeta } from '../common/utils/request-meta.util';
+import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { Verify2faDto } from './dto/verify-2fa.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { VerifyLoginTwoFactorDto } from './dto/verify-login-2fa.dto';
-
-function requestMeta(req: Request): RequestMeta {
-  return {
-    ip: req.ip,
-    userAgent: req.headers['user-agent'],
-    deviceId: req.headers['x-device-id'] as string | undefined,
-  };
-}
 
 @ApiTags('auth')
 @Controller('auth')

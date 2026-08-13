@@ -73,3 +73,17 @@ export interface ApiErrorBody {
     details?: unknown;
   };
 }
+
+export interface RiskDisclosureAgreement {
+  id: string;
+  version: number;
+  title: string;
+  bodyMarkdown: string;
+  effectiveAt: string;
+}
+
+export interface AcceptanceStatus {
+  accepted: boolean;
+  agreementVersion: number;
+  acceptedAt: string | null;
+}

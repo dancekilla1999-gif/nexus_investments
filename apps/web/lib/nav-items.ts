@@ -11,6 +11,7 @@ import {
   CreditCard,
   ShieldCheck,
   UserCircle,
+  Landmark,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ export const primaryNavItems: NavItem[] = [
   { label: 'Orders', href: '/orders', icon: ListOrdered, milestone: 'MVP4' },
   { label: 'Transactions', href: '/transactions', icon: Receipt, milestone: 'MVP2' },
   { label: 'Subscriptions', href: '/subscriptions', icon: CreditCard, milestone: 'MVP8' },
+  { label: 'Managed Accounts', href: '/managed-accounts', icon: Landmark, milestone: 'MVP11' },
 ];
 
 export const accountNavItems: NavItem[] = [

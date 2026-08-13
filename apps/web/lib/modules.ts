@@ -8,6 +8,7 @@ import {
   ListOrdered,
   Receipt,
   CreditCard,
+  Landmark,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -120,6 +121,18 @@ export const modules: Record<string, ModuleInfo> = {
       'Plan pricing and features are Admin Panel-configurable, never hardcoded in the frontend',
       'Entitlement checks run server-side on every gated endpoint',
       'Referral commissions post through the same ledger as everything else',
+    ],
+  },
+  managedAccounts: {
+    title: 'Managed Accounts',
+    milestone: 'MVP11',
+    icon: Landmark,
+    tagline: 'Discretionary investing — a manager or validated strategy trades on your behalf.',
+    bullets: [
+      'Your capital stays in your own segregated sub-account — never pooled with another investor’s',
+      'A hard, platform-enforced ceiling: no account can be configured to risk more than 10% of its capital',
+      'No strategy trades real capital without a passing historical backtest and a live paper-trading observation window first',
+      'Requires its own jurisdiction-specific legal review for discretionary trading — separate from, and stricter than, the platform’s base custodial review',
     ],
   },
 };

@@ -62,6 +62,59 @@ async function main() {
     });
   }
 
+  // See docs/10-managed-accounts-architecture.md §3: this is a clearly-labeled placeholder
+  // draft, not real legal copy. It must be drafted or reviewed by licensed counsel per
+  // jurisdiction before PLATFORM_MODE=live is ever set for Managed Accounts specifically —
+  // see docs/10 §1. Seeding it now only makes the acceptance-recording flow exercisable.
+  await prisma.riskDisclosureAgreement.upsert({
+    where: { version: 1 },
+    update: {},
+    create: {
+      version: 1,
+      title: 'Managed Account Risk Disclosure (DRAFT — placeholder, not final legal copy)',
+      isCurrent: true,
+      effectiveAt: new Date('2026-01-01T00:00:00Z'),
+      bodyMarkdown: `> **Draft placeholder.** This text has not been reviewed by licensed
+counsel in any jurisdiction and must not be relied upon or shown to a real investor before
+that review happens (docs/10-managed-accounts-architecture.md §1, §3). It exists so the
+acceptance-recording mechanism can be built and tested honestly ahead of the legal text it
+will eventually carry.
+
+## What a Managed Account is
+
+A Managed Account lets you allocate capital that a designated manager or a validated
+algorithmic strategy trades on your behalf, inside a sub-account that remains yours at all
+times — your funds are never pooled with another investor's.
+
+## The risks, stated plainly
+
+- **You can lose money, including some or all of the capital you allocate.** Trading digital
+  assets is volatile and unpredictable.
+- **Nothing is guaranteed.** No manager, algorithm, or backtest result — however strong — is a
+  promise of future performance. Past results, including backtested and paper-traded results,
+  do not predict future results.
+- **This is not financial advice**, and nothing in this platform should be read as a
+  personalized recommendation that a Managed Account is suitable for you.
+- **The platform is not your fiduciary** unless and until it is licensed as such in your
+  jurisdiction; check the current licensing status shown on this page before allocating any
+  capital.
+
+## The one number that matters: the 10% cap
+
+Every Managed Account has a hard maximum-drawdown ceiling of **10% of the account's
+high-water-mark capital** — the platform will not configure an account to risk more than that,
+and it is not a target, it is a ceiling. Crossing it halts new risk-taking on that account
+immediately and notifies you; it does not undo a loss that already happened. You may set a
+stricter (lower) limit; you cannot set a looser one.
+
+## Before you allocate capital
+
+You confirm that you understand and accept the above, that you are allocating capital you can
+afford to lose, and that you have read the fee schedule shown to you before authorizing the
+account.`,
+    },
+  });
+
   console.log('Seed complete.');
 }
 

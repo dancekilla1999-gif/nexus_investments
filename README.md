@@ -27,6 +27,8 @@ Read in this order:
 7. [`docs/07-ai-signal-architecture.md`](docs/07-ai-signal-architecture.md) — indicators, signals, AI assistant
 8. [`docs/08-ui-ux-architecture.md`](docs/08-ui-ux-architecture.md) — design system, screen inventory
 9. [`docs/09-roadmap.md`](docs/09-roadmap.md) — milestones, acceptance criteria, **current status**
+10. [`docs/10-managed-accounts-architecture.md`](docs/10-managed-accounts-architecture.md) — investor-funded discretionary accounts, risk disclosure, the 10% drawdown cap
+11. [`docs/11-backtesting-architecture.md`](docs/11-backtesting-architecture.md) — backtest → paper-trade → live-eligible gate, required before any strategy trades real capital
 
 ## Repository layout
 
@@ -39,7 +41,7 @@ packages/  (reserved) shared contracts/config — see docs/02 §1; not populated
 infra/
   compose/ docker-compose for local Postgres + Redis
   docker/  Dockerfiles for apps/api and apps/web
-docs/      the 9 architecture documents above
+docs/      the 11 architecture documents above
 ```
 
 ## Quickstart (local development)
@@ -65,14 +67,15 @@ npm run dev:web                      # http://localhost:3000
 ## Testing
 
 ```bash
-npm run test                              # apps/api unit tests (33: password hashing, TOTP,
+npm run test                              # apps/api unit tests (41: password hashing, TOTP,
                                            # envelope encryption, duration parsing, the Redis-
-                                           # backed rate limiter under real concurrency, and the
-                                           # full AuthService)
-npm run test:e2e -w apps/api              # apps/api e2e (9, live Postgres + Redis required —
+                                           # backed rate limiter under real concurrency, the full
+                                           # AuthService, and the risk-disclosure LegalService)
+npm run test:e2e -w apps/api              # apps/api e2e (13, live Postgres + Redis required —
                                            # see apps/api/test/setup-env.ts): the full HTTP
                                            # pipeline exercising registration, refresh rotation +
-                                           # replay detection, 2FA-gated login, rate limiting
+                                           # replay detection, 2FA-gated login, rate limiting, and
+                                           # the risk-disclosure read/accept flow
 npm run lint                              # tsc --noEmit for both apps
 npm run build                             # production build for both apps
 ```
@@ -82,8 +85,10 @@ MVP1's auth flow has been verified **live**, twice: once against the API directl
 2FA-gated re-login, all against a real PostgreSQL 16 instance), and again as a full-stack
 Playwright run against the production web build (register → dashboard → every nav section →
 mobile viewport → theme toggle → logout, screenshotted at each step) — which is what caught
-and got a real fix for a `backdrop-filter` containing-block bug in the mobile nav drawer. See
-`CHANGELOG.md` for both.
+and got a real fix for a `backdrop-filter` containing-block bug in the mobile nav drawer. The
+Managed Accounts risk-disclosure flow (`docs/10-managed-accounts-architecture.md`) was verified
+the same way: register → open Managed Accounts → read → accept → reload → still accepted, zero
+console errors. See `CHANGELOG.md` for all three.
 
 To run the e2e suite locally, point it at a dedicated database (never reuse dev data) and
 apply migrations once:

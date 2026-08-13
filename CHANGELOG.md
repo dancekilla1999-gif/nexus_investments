@@ -1,5 +1,71 @@
 # Changelog
 
+## Managed Accounts foundation (design + real risk-disclosure consent flow)
+
+**Date:** 2026-08-13
+
+Product addition: investors who don't want to trade themselves can allocate capital to a
+**Managed Account** that a manager/validated strategy trades on their behalf. This is a more
+heavily regulated business than the base custodial exchange (discretionary trading of client
+funds is investment-adviser / asset-management activity in most jurisdictions), so it's built
+the same way everything regulated in this repo is: fully designed, gated behind explicit
+compliance checks, and only the parts that are honest to ship *now* actually ship now.
+
+### Added — design
+
+- `docs/10-managed-accounts-architecture.md`: segregated per-investor sub-accounts (never a
+  pooled fund), the risk-disclosure consent gate, a hard 10%-of-capital max-drawdown circuit
+  breaker (high-water-mark based, platform-ceiling enforced server-side, not just in the UI),
+  ledger integration, trade fan-out execution, and fee model.
+- `docs/11-backtesting-architecture.md`: no strategy ever reaches a live Managed Account
+  without a passing historical backtest (walk-forward, no look-ahead, realistic fees/slippage,
+  survivorship-bias-free pair universe) *and* a minimum live paper-trading observation window.
+  Historical data sourced from Binance's free public klines API (CoinMarketCap's historical
+  OHLCV requires a paid Enterprise plan — an intentional, documented provider split from the
+  live top-25 ranking, which stays on CoinMarketCap).
+- `docs/09-roadmap.md` MVP11 milestone with acceptance criteria; non-goals and companion-doc
+  list in `docs/01-PRD.md` updated to reference both new documents.
+- Full data model: `RiskDisclosureAgreement`, `RiskDisclosureAcceptance`, `ManagedAccount`,
+  `TradingStrategy`, `BacktestRun`, `BacktestResult`, plus a nullable `managedAccountId` on
+  `ledger_accounts`/`orders` and new `RiskEventType`/`NotificationType` values — additive
+  migration, schema-only until MVP11 except where noted below.
+
+### Added — real, working code (ships now, not gated behind MVP11)
+
+The risk-disclosure consent flow doesn't depend on wallet/ledger/trading, so it's built for
+real today rather than waiting for the milestone that needs it:
+
+- **`LegalService`/`LegalController`** (`/api/v1/legal/risk-disclosure/*`): a public endpoint
+  to read the current agreement (a prospective investor shouldn't need an account to see it),
+  an authenticated status check, and an idempotent, audit-logged accept action. No update/
+  delete path exists for an acceptance record — same immutability convention as `AuditLog`.
+  `assertCurrentAgreementAccepted()` is exported now as the guard MVP11's account creation
+  will call.
+- A real Managed Accounts page in the web app: reads and renders the current agreement (a
+  small, dependency-free markdown-lite renderer — no `dangerouslySetInnerHTML`, every
+  character renders as text, never as injected markup), records acceptance, shows the
+  persisted "Accepted on …" state on reload, and is honest that account creation itself isn't
+  built yet, with the real bullet points from the roadmap.
+- A clearly-labeled **draft placeholder** risk disclosure document is seeded (never real legal
+  copy presented as final — see `docs/10 §3`) so the flow is exercisable end to end.
+- 4 new e2e tests (`test/legal.e2e-spec.ts`) + 7 new unit tests (`legal.service.spec.ts`):
+  public read, unauthenticated-accept rejection, idempotent accept (no duplicate row, no
+  double audit-log entry), status reflecting the persisted acceptance. 54 automated tests
+  total now (41 unit + 13 e2e), all passing.
+- Verified live: registered a user, opened Managed Accounts from the sidebar, read the
+  disclosure, accepted it, reloaded the page, and the acceptance was still there — zero
+  console errors (Playwright against the production build, screenshotted).
+
+### Why the account itself isn't buildable yet
+
+`ManagedAccount`/`TradingStrategy`/`BacktestRun`/`BacktestResult` have no service logic behind
+them on purpose — they need the Ledger (MVP2), Trading (MVP4), and Signal/Indicator Engine
+(MVP6) this repository hasn't built yet. Faking a "create account" button ahead of a ledger
+that can actually hold segregated funds would be exactly the kind of fake fintech this project
+is built not to do.
+
+---
+
 ## MVP1 quality hardening pass
 
 **Date:** 2026-08-13

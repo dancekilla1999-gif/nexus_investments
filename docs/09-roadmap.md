@@ -47,6 +47,13 @@ with real auth/profile data and honest empty states for everything not yet built
       of the viewport because `backdrop-blur` on an ancestor makes it a CSS containing block
       for `position: fixed` descendants — fixed by portaling the drawer to `document.body`.
       See `CHANGELOG.md` for the full list of what browser verification exercised.
+- [x] **Legal / risk disclosure (pulled forward from MVP11):** a versioned
+      `RiskDisclosureAgreement` and an insert-only `RiskDisclosureAcceptance` record — real
+      backend (`/api/v1/legal/*`) and a real frontend page, not a placeholder. This is the
+      compliance precondition every Managed Account will require
+      (`docs/10-managed-accounts-architecture.md §3`), built now because it doesn't depend on
+      the trading machinery MVP11 needs and every day it exists sooner is a day of accepted-
+      version audit trail already accumulating.
 
 **Post-milestone gate:** see `CHANGELOG.md` for the review pass performed before merge.
 
@@ -176,6 +183,40 @@ compliance review gating `PLATFORM_MODE=live` per `01-PRD.md §8`.
   `PLATFORM_MODE=live` deployment.
 - Every jurisdiction the platform intends to operate in has a documented legal review outcome
   before it is enabled.
+
+## MVP11 — Managed Accounts & Backtest-Gated Algorithmic Trading — ⏳ designed
+
+**Scope:** see `docs/10-managed-accounts-architecture.md` and
+`docs/11-backtesting-architecture.md` in full. In short: investors allocate capital to a
+segregated, consent-gated sub-account that a manager/validated strategy trades on their
+behalf, bounded by a hard 10%-of-capital max-drawdown circuit breaker; no strategy ever
+reaches a live Managed Account without a passing backtest, a paper-trading observation
+window, and (separately) a jurisdiction-specific legal review clearing discretionary trading
+specifically — a heavier bar than the base custodial-exchange review in `01-PRD.md §8`, not
+the same one.
+
+**Depends on:** MVP2 (Ledger), MVP4 (Trading), MVP6 (Signal/Indicator Engine) — this is a
+capstone feature, not something buildable in isolation from day one.
+
+**Already shipped ahead of this milestone** (because the compliance precondition doesn't need
+to wait for the trading machinery): the full data model (§9 of `docs/10`) and a real, working
+`RiskDisclosureAgreement` / `RiskDisclosureAcceptance` flow — investors can read the current
+risk disclosure and record explicit, audit-logged acceptance today, via `/api/v1/legal/*` and
+the web app's Managed Accounts intro page. See the "Legal / risk disclosure" entry under MVP1
+above for what was verified.
+
+**Acceptance criteria (for the rest of the milestone):**
+- No `ManagedAccount` can reach `ACTIVE` status without a current, accepted
+  `RiskDisclosureAcceptance` for that investor — enforced server-side, tested by attempting to
+  bypass via direct API calls.
+- `maxDrawdownBps` is rejected above `1000` (10%) at every write path, not just the UI.
+- The circuit breaker fires correctly under a simulated drawdown-crossing test — no new
+  risk-increasing order can be placed on a `CIRCUIT_BROKEN` account, verified by attempting one.
+- No `TradingStrategy` can be assigned to a live Managed Account without a `BacktestResult`
+  clearing the documented promotion bar *and* a completed paper-trading window — tested by
+  attempting to skip each gate independently.
+- Fees are Admin Panel-configurable and shown to the investor before account authorization,
+  never hardcoded.
 
 ---
 

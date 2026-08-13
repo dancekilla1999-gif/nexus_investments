@@ -236,6 +236,7 @@ async function resetDatabase(prisma: PrismaService) {
     prisma.notification.deleteMany(),
     prisma.referral.deleteMany(),
     prisma.apiKey.deleteMany(),
+    prisma.riskDisclosureAcceptance.deleteMany(),
     prisma.profile.deleteMany(),
     prisma.user.deleteMany(),
   ]);

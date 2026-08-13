@@ -76,6 +76,12 @@ See `09-roadmap.md` for the full milestone breakdown. In short:
   Currently in-scope for the trading module: **spot only**.
   If margin/futures ship later, they launch in **testnet/paper mode** first for at least one
   full milestone before any real-money enablement.
+- Managed/discretionary accounts trading real investor capital — fully designed
+  (`docs/10-managed-accounts-architecture.md`, `docs/11-backtesting-architecture.md`), gated
+  behind MVP2+MVP4+MVP6, and additionally behind its own jurisdiction-specific legal review
+  for discretionary-trading licensing, distinct from and stricter than the base custodial
+  review in §8. Only the risk-disclosure consent flow itself ships in v1 (real, not mocked) —
+  see `docs/09-roadmap.md §MVP1`.
 - A proprietary L1/L2/appchain. Not justified at this stage; revisit only with a dedicated
   architecture doc if/when volume justifies it (see `06-blockchain-architecture.md §9`).
 - Fiat card/bank rails (ACH/SEPA/card) — v1 fiat exposure is limited to P2P, where the
@@ -125,3 +131,7 @@ in **testnet mode only**, clearly labeled as such in the UI, per Product Princip
 6. `07-ai-signal-architecture.md` — indicator engine, signal engine, AI assistant
 7. `08-ui-ux-architecture.md` — design system, information architecture, screen inventory
 8. `09-roadmap.md` — milestones, acceptance criteria, current implementation status
+9. `10-managed-accounts-architecture.md` — investor-funded discretionary/managed trading
+   accounts, risk disclosure consent, the 10% hard drawdown cap
+10. `11-backtesting-architecture.md` — strategy validation: historical backtest → paper-trade
+    window → live-eligible gate, required before any strategy trades a Managed Account

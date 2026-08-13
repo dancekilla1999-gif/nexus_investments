@@ -90,6 +90,11 @@ model User {
   subscriptions     Subscription[]
   riskEvents        RiskEvent[]
 
+  // Managed Accounts / legal (docs/10-managed-accounts-architecture.md) — schema live now,
+  // services land in MVP11; the risk-disclosure acceptance flow ships in MVP1 (see roadmap).
+  riskDisclosureAcceptances RiskDisclosureAcceptance[]
+  managedAccounts           ManagedAccount[]
+
   @@index([email])
   @@map("users")
 }
@@ -227,6 +232,9 @@ enum RiskEventType {
   P2P_FRAUD_SIGNAL
   AML_FLAG
   LOGIN_ANOMALY
+  /// docs/10-managed-accounts-architecture.md §4 — a Managed Account breached its
+  /// maxDrawdownBps ceiling and was moved to CIRCUIT_BROKEN.
+  MANAGED_ACCOUNT_CIRCUIT_BREAKER
   OTHER
 }
 
@@ -473,11 +481,25 @@ model LedgerAccount {
   assetId   String
   asset     Asset             @relation(fields: [assetId], references: [id])
   type      LedgerAccountType
+
+  /// Null = the user's own self-directed balance. Set = this ledger account belongs to one of
+  /// the user's Managed Accounts (docs/10-managed-accounts-architecture.md §5) — structurally
+  /// impossible to commingle with personal balances since it's a different ledger account
+  /// entirely, moved between only via an explicit TRANSFER_INTERNAL ledger transaction.
+  managedAccountId String?
+  managedAccount   ManagedAccount? @relation(fields: [managedAccountId], references: [id])
+
   createdAt DateTime          @default(now())
 
   entries   LedgerEntry[]
 
-  @@unique([userId, assetId, type])
+  // NOTE: Postgres treats NULL as distinct in a unique index, so this constraint alone does
+  // NOT stop two personal (managedAccountId = null) ledger accounts of the same
+  // (userId, assetId, type) from being created. When the Ledger service (MVP2) lands, add a
+  // partial unique index via raw migration SQL — `CREATE UNIQUE INDEX ... WHERE
+  // managed_account_id IS NULL` — Prisma's schema DSL doesn't support partial indexes
+  // declaratively. Documented gap, not a silent one.
+  @@unique([userId, managedAccountId, assetId, type])
   @@map("ledger_accounts")
 }
 
@@ -683,6 +705,14 @@ model Order {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   cancelledAt     DateTime?
+
+  /// Set when this order was placed by a Managed Account's manager/strategy on the owning
+  /// user's behalf, not by the user directly — docs/10-managed-accounts-architecture.md §6.
+  /// A Managed Account trade is still just an Order row through the same pipeline every
+  /// self-directed trade uses; this field is attribution, not a different code path.
+  placedByManagerId String?
+  managedAccountId  String?
+  managedAccount    ManagedAccount? @relation(fields: [managedAccountId], references: [id])
 
   trades          Trade[]
 
@@ -1000,6 +1030,8 @@ enum NotificationType {
   SUBSCRIPTION
   MARKET_ALERT
   NEWS
+  /// Managed Account circuit-breaker / drawdown alerts — docs/10-managed-accounts-architecture.md §4.
+  RISK_ALERT
 }
 
 model Notification {
@@ -1035,4 +1067,155 @@ model FeeSchedule {
   updatedById    String?
 
   @@map("fee_schedules")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Legal / Managed Accounts / Strategy Validation
+// (docs/10-managed-accounts-architecture.md, docs/11-backtesting-architecture.md)
+//
+// RiskDisclosureAgreement + RiskDisclosureAcceptance ship as real, working code in MVP1 (see
+// docs/09-roadmap.md) — this is the compliance precondition every Managed Account requires,
+// and it doesn't depend on the trading machinery the rest of this section does.
+//
+// ManagedAccount / TradingStrategy / BacktestRun / BacktestResult are schema-only until
+// MVP11 — no service creates or mutates them yet. Additive migrations only from here, matching
+// this project's "schema stable early, services land per milestone" convention.
+// ─────────────────────────────────────────────────────────────────────────
+
+model RiskDisclosureAgreement {
+  id           String   @id @default(cuid())
+  version      Int      @unique
+  title        String
+  bodyMarkdown String
+  isCurrent    Boolean  @default(false)
+  effectiveAt  DateTime
+  createdAt    DateTime @default(now())
+
+  acceptances  RiskDisclosureAcceptance[]
+
+  @@map("risk_disclosure_agreements")
+}
+
+/// Insert-only — docs/10-managed-accounts-architecture.md §3. No update/delete service method
+/// exists for this model, same convention as AuditLog/LedgerEntry/SignalResult
+/// (docs/03-database-architecture.md §5). This is the legal record that the investor was told
+/// the risks before any capital was ever allocated — it does not get edited after the fact.
+model RiskDisclosureAcceptance {
+  id          String                  @id @default(cuid())
+  userId      String
+  user        User                    @relation(fields: [userId], references: [id])
+  agreementId String
+  agreement   RiskDisclosureAgreement @relation(fields: [agreementId], references: [id])
+  acceptedAt  DateTime                @default(now())
+  ip          String?
+  userAgent   String?
+
+  @@unique([userId, agreementId])
+  @@index([userId])
+  @@map("risk_disclosure_acceptances")
+}
+
+enum ManagedAccountStatus {
+  PENDING_AGREEMENT
+  ACTIVE
+  CIRCUIT_BROKEN
+  CLOSED
+}
+
+/// Segregated per-investor sub-account, never a pooled fund — docs/10 §2. Schema-only until
+/// MVP11; no service creates one of these yet.
+model ManagedAccount {
+  id                  String               @id @default(cuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id])
+  strategyId          String?
+  strategy            TradingStrategy?     @relation(fields: [strategyId], references: [id])
+  status              ManagedAccountStatus @default(PENDING_AGREEMENT)
+  initialCapital      Decimal              @db.Decimal(36, 18)
+  highWaterMark       Decimal              @db.Decimal(36, 18)
+  /// Hard platform ceiling is 1000 (10%) — docs/10 §4. An investor/manager may set a stricter
+  /// (lower) value; the service layer must reject anything higher, not just the UI.
+  maxDrawdownBps      Int                  @default(1000)
+  autoFlattenOnBreach Boolean              @default(false)
+  createdAt           DateTime             @default(now())
+  closedAt            DateTime?
+
+  ledgerAccounts      LedgerAccount[]
+  orders              Order[]
+
+  @@index([userId])
+  @@map("managed_accounts")
+}
+
+enum StrategyKind {
+  RULE_BASED
+  ML
+}
+
+enum StrategyPromotionStatus {
+  BACKTESTING
+  PAPER_TRADING
+  LIVE_ELIGIBLE
+}
+
+/// docs/11-backtesting-architecture.md. Schema-only until MVP11.
+model TradingStrategy {
+  id              String                   @id @default(cuid())
+  name            String
+  version         Int
+  kind            StrategyKind
+  configJson      Json
+  /// BACKTESTING → PAPER_TRADING → LIVE_ELIGIBLE — docs/11 §4. Three independent gates (this,
+  /// PLATFORM_MODE=live, and a discretionary-trading legal review) all have to clear before
+  /// real capital ever trades on this strategy.
+  promotionStatus StrategyPromotionStatus @default(BACKTESTING)
+  createdAt       DateTime                @default(now())
+
+  managedAccounts ManagedAccount[]
+  backtestRuns    BacktestRun[]
+
+  @@unique([name, version])
+  @@map("trading_strategies")
+}
+
+enum BacktestRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model BacktestRun {
+  id                       String            @id @default(cuid())
+  strategyId               String
+  strategy                 TradingStrategy   @relation(fields: [strategyId], references: [id])
+  dateRangeStart           DateTime
+  dateRangeEnd             DateTime
+  /// The exact, dated top-25 pair list this run actually used — never today's list applied
+  /// retroactively (survivorship bias). docs/11 §2.
+  pairUniverseSnapshotJson Json
+  status                   BacktestRunStatus @default(PENDING)
+  createdAt                DateTime          @default(now())
+
+  result                   BacktestResult?
+
+  @@index([strategyId])
+  @@map("backtest_runs")
+}
+
+/// Insert-only — docs/11-backtesting-architecture.md §3. A bad result gets a new run with a
+/// fixed strategy, never a hand-edited number.
+model BacktestResult {
+  id             String      @id @default(cuid())
+  backtestRunId  String      @unique
+  backtestRun    BacktestRun @relation(fields: [backtestRunId], references: [id])
+  totalTrades    Int
+  winRate        Float
+  avgR           Float
+  maxDrawdownBps Int
+  sharpe         Float?
+  sortino        Float?
+  createdAt      DateTime    @default(now())
+
+  @@map("backtest_results")
 }
