@@ -31,9 +31,12 @@ export const envSchema = z.object({
     .string()
     .default('dev-only-insecure-encryption-key-32b!!'),
 
+  // Applies to every route via the global ThrottlerGuard (app.module.ts). A handful of
+  // sensitive auth routes additionally carry a stricter, static @Throttle() override in
+  // auth.controller.ts — those are deliberately NOT env-configurable (see the comment there)
+  // so this file doesn't advertise a config knob that nothing actually reads.
   THROTTLE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   THROTTLE_LIMIT_DEFAULT: z.coerce.number().int().positive().default(120),
-  THROTTLE_LIMIT_AUTH: z.coerce.number().int().positive().default(10),
 
   LOG_LEVEL: z.string().default('info'),
 

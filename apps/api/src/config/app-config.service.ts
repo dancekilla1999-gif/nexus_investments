@@ -37,6 +37,10 @@ export class AppConfigService {
     return this.config.get('DATABASE_URL', { infer: true });
   }
 
+  get redisUrl() {
+    return this.config.get('REDIS_URL', { infer: true });
+  }
+
   get jwtAccessSecret() {
     return this.config.get('JWT_ACCESS_SECRET', { infer: true });
   }
@@ -61,11 +65,14 @@ export class AppConfigService {
     return {
       ttlSeconds: this.config.get('THROTTLE_TTL_SECONDS', { infer: true }),
       limitDefault: this.config.get('THROTTLE_LIMIT_DEFAULT', { infer: true }),
-      limitAuth: this.config.get('THROTTLE_LIMIT_AUTH', { infer: true }),
     };
   }
 
   get notificationsEmailProvider() {
     return this.config.get('NOTIFICATIONS_EMAIL_PROVIDER', { infer: true });
+  }
+
+  get logLevel() {
+    return this.config.get('LOG_LEVEL', { infer: true });
   }
 }

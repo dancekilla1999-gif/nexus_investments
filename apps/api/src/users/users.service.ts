@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { AuditActorType } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UserResponseDto } from './dto/user-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -11,15 +13,14 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
-  async getMe(userId: string) {
+  async getMe(userId: string): Promise<UserResponseDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { profile: true },
     });
     if (!user) throw new NotFoundException('User not found.');
 
-    const { passwordHash: _passwordHash, totpSecretEnc: _totpSecretEnc, ...safe } = user;
-    return safe;
+    return plainToInstance(UserResponseDto, user, { excludeExtraneousValues: true });
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {

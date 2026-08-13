@@ -1,6 +1,14 @@
 import { useAuthStore } from './auth-store';
 import { clearStoredRefreshToken, getStoredRefreshToken, storeRefreshToken } from './session';
-import { ApiErrorBody, LoginResponse, PublicUser, TokensResponse } from './types';
+import {
+  ApiErrorBody,
+  Device,
+  LoginResponse,
+  Profile,
+  PublicUser,
+  TokensResponse,
+  UpdateProfileInput,
+} from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
@@ -9,6 +17,7 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public status: number,
+    public details?: unknown,
   ) {
     super(message);
   }
@@ -47,6 +56,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
       err?.error?.code ?? 'UNKNOWN_ERROR',
       err?.error?.message ?? 'Something went wrong.',
       res.status,
+      err?.error?.details,
     );
   }
 
@@ -60,15 +70,18 @@ async function refreshAccessToken(): Promise<boolean> {
     const refreshToken = getStoredRefreshToken();
     if (!refreshToken) return false;
     try {
-      const tokens = await request<TokensResponse>('/auth/refresh', {
-        method: 'POST',
-        body: JSON.stringify({ refreshToken }),
-      }, false);
+      const tokens = await request<TokensResponse>(
+        '/auth/refresh',
+        { method: 'POST', body: JSON.stringify({ refreshToken }) },
+        false,
+      );
       storeRefreshToken(tokens.refreshToken);
-      const me = await request<PublicUser & { profile?: unknown }>('/users/me', {
-        headers: { Authorization: `Bearer ${tokens.accessToken}` },
-      }, false).catch(() => null);
-      useAuthStore.getState().setSession(tokens.accessToken, (me as PublicUser) ?? useAuthStore.getState().user!);
+      const me = await request<PublicUser>(
+        '/users/me',
+        { headers: { Authorization: `Bearer ${tokens.accessToken}` } },
+        false,
+      ).catch(() => null);
+      useAuthStore.getState().setSession(tokens.accessToken, me ?? useAuthStore.getState().user!);
       return true;
     } catch {
       clearStoredRefreshToken();
@@ -101,12 +114,14 @@ export const api = {
   logout: (refreshToken: string) =>
     request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
 
-  getMe: () => request<PublicUser & { profile?: Record<string, unknown> }>('/users/me'),
+  getMe: () => request<PublicUser>('/users/me'),
 
-  updateProfile: (input: Record<string, unknown>) =>
-    request<unknown>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
+  updateProfile: (input: UpdateProfileInput) =>
+    request<Profile>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
 
-  listDevices: () => request<unknown[]>('/users/me/devices'),
+  listDevices: () => request<Device[]>('/users/me/devices'),
+
+  revokeDevice: (deviceId: string) => request<void>(`/users/me/devices/${deviceId}`, { method: 'DELETE' }),
 
   enroll2fa: () => request<{ secret: string; otpauthUrl: string }>('/auth/2fa/enroll', { method: 'POST' }),
 
@@ -115,6 +130,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ code }),
     }),
+
+  disable2fa: (code: string) =>
+    request<void>('/auth/2fa/disable', { method: 'POST', body: JSON.stringify({ code }) }),
 
   refreshAccessToken,
 };

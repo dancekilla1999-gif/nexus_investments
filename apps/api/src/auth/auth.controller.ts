@@ -26,6 +26,10 @@ function requestMeta(req: Request): RequestMeta {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  // register/login/2fa-verify get a stricter per-route override of the 'default' throttler
+  // bucket (10 req/min vs. the app-wide THROTTLE_LIMIT_DEFAULT) — these are credential-guessing
+  // surfaces, so they stay static and reviewed-in-code rather than env-configurable, unlike
+  // the app-wide default (docs/05-security-architecture.md §1, §5).
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')

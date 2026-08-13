@@ -6,7 +6,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { AuditActorType, NotificationType, User, UserRole, UserStatus } from '@prisma/client';
+import { AuditActorType, NotificationType, User, UserStatus } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
 import * as crypto from 'node:crypto';
 import { AppConfigService } from '../config/app-config.service';
 import { EnvelopeEncryptionService } from '../common/crypto/envelope-encryption.service';
@@ -14,6 +15,7 @@ import { parseDurationToMs } from '../common/utils/duration.util';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserResponseDto } from '../users/dto/user-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyLoginTwoFactorDto } from './dto/verify-login-2fa.dto';
@@ -41,28 +43,12 @@ export interface TokensResponse {
   expiresInSeconds: number;
 }
 
-export interface PublicUser {
-  id: string;
-  email: string;
-  role: UserRole;
-  status: UserStatus;
-  totpEnabled: boolean;
-  emailVerified: boolean;
-  createdAt: Date;
-}
+export type LoginResult =
+  | { twoFactorRequired: true; loginTicket: string }
+  | (TokensResponse & { user: UserResponseDto });
 
-export type LoginResult = { twoFactorRequired: true; loginTicket: string } | (TokensResponse & { user: PublicUser });
-
-function toPublicUser(user: User): PublicUser {
-  return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    status: user.status,
-    totpEnabled: user.totpEnabled,
-    emailVerified: user.emailVerifiedAt !== null,
-    createdAt: user.createdAt,
-  };
+function toPublicUser(user: User): UserResponseDto {
+  return plainToInstance(UserResponseDto, user, { excludeExtraneousValues: true });
 }
 
 @Injectable()
@@ -78,7 +64,7 @@ export class AuthService {
 
   // ── Registration ──────────────────────────────────────────────────────
 
-  async register(dto: RegisterDto, meta: RequestMeta): Promise<TokensResponse & { user: PublicUser }> {
+  async register(dto: RegisterDto, meta: RequestMeta): Promise<TokensResponse & { user: UserResponseDto }> {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException('An account with this email already exists.');
@@ -218,7 +204,7 @@ export class AuthService {
     return { ...tokens, user: toPublicUser(user) };
   }
 
-  async verifyLoginTwoFactor(dto: VerifyLoginTwoFactorDto, meta: RequestMeta): Promise<TokensResponse & { user: PublicUser }> {
+  async verifyLoginTwoFactor(dto: VerifyLoginTwoFactorDto, meta: RequestMeta): Promise<TokensResponse & { user: UserResponseDto }> {
     let payload: { sub: string; purpose: string };
     try {
       payload = this.jwt.verify(dto.loginTicket);

@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Card } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { storeRefreshToken } from '@/lib/session';
+import { toast } from '@/lib/toast';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -35,6 +37,7 @@ export default function LoginPage() {
       } else {
         storeRefreshToken(result.refreshToken);
         setSession(result.accessToken, result.user);
+        toast.success('Welcome back');
         router.push('/dashboard');
       }
     } catch (err) {
@@ -53,6 +56,7 @@ export default function LoginPage() {
       const result = await api.verifyLogin2fa({ loginTicket, code });
       storeRefreshToken(result.refreshToken);
       setSession(result.accessToken, result.user);
+      toast.success('Welcome back');
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid code. Please try again.');
@@ -84,8 +88,7 @@ export default function LoginPage() {
               />
             </Field>
             <Field label="Password">
-              <Input
-                type="password"
+              <PasswordInput
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

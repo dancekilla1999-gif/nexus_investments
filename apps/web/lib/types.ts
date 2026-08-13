@@ -11,22 +11,47 @@
 export type UserRole = 'USER' | 'SUPPORT' | 'COMPLIANCE' | 'RISK_OPS' | 'ADMIN' | 'SUPERADMIN';
 export type UserStatus = 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED' | 'BANNED' | 'CLOSED';
 
-export interface PublicUser {
-  id: string;
-  email: string;
-  role: UserRole;
-  status: UserStatus;
-  totpEnabled: boolean;
-  emailVerified: boolean;
-  createdAt: string;
-}
-
 export interface Profile {
   firstName?: string | null;
   lastName?: string | null;
   country?: string | null;
   preferredCurrency: string;
   timezone: string;
+  avatarUrl?: string | null;
+}
+
+export interface PublicUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  status: UserStatus;
+  totpEnabled: boolean;
+  withdrawalWhitelistEnabled: boolean;
+  referralCode: string;
+  emailVerified: boolean;
+  createdAt: string;
+  lastLoginAt?: string | null;
+  profile?: Profile;
+}
+
+export interface Device {
+  id: string;
+  label: string | null;
+  userAgent: string | null;
+  ip: string | null;
+  trusted: boolean;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+}
+
+export interface UpdateProfileInput {
+  firstName?: string;
+  lastName?: string;
+  country?: string;
+  preferredCurrency?: string;
+  timezone?: string;
+  antiPhishingCode?: string;
 }
 
 export interface TokensResponse {

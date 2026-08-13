@@ -4,7 +4,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppConfigModule } from './config/app-config.module';
 import { AppConfigService } from './config/app-config.service';
 import { PlatformModeGuard } from './config/platform-mode.guard';
+import { LoggerModule } from './logger/logger.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { RedisThrottlerStorage } from './redis/redis-throttler.storage';
 import { AuditModule } from './audit/audit.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
@@ -16,16 +19,19 @@ import { RolesGuard } from './common/guards/roles.guard';
 @Module({
   imports: [
     AppConfigModule,
+    LoggerModule,
+    RedisModule,
     ThrottlerModule.forRootAsync({
-      imports: [AppConfigModule],
-      inject: [AppConfigService],
-      useFactory: (config: AppConfigService) => ({
+      imports: [RedisModule],
+      inject: [AppConfigService, RedisThrottlerStorage],
+      useFactory: (config: AppConfigService, storage: RedisThrottlerStorage) => ({
         throttlers: [
           {
             ttl: config.throttle.ttlSeconds * 1000,
             limit: config.throttle.limitDefault,
           },
         ],
+        storage,
       }),
     }),
     PrismaModule,

@@ -28,6 +28,25 @@ with real auth/profile data and honest empty states for everything not yet built
 - [x] Dashboard renders for an authenticated user with zero fabricated data.
 - [x] Full Prisma schema for MVP1–MVP9 tables defined (stable schema, incremental service
       build-out), so later milestones are additive migrations, not redesigns.
+- [x] Rate limiting is genuinely Redis-backed (atomic Lua-scripted storage, correct under
+      concurrency and across instances) — not the in-memory default that silently stops
+      working once the API scales past one process.
+- [x] Structured JSON logging (pino) with a request-correlation ID threaded through access
+      logs, application logs, and the client-facing error body.
+- [x] Full authenticated app shell: sidebar/topbar navigation across the entire product IA
+      (Wallet, Trading, P2P, Markets, Signals, Portfolio, Orders, Transactions, Subscriptions,
+      Security, Profile), light/dark theme, toasts, skeleton loading states. Security Center
+      and Profile are fully functional (2FA, device revocation, profile editing); every other
+      section is an honest "ships in MVP-N" page, not a stub pretending otherwise.
+- [x] End-to-end (supertest) test suite against a live PostgreSQL + Redis, run through the
+      exact same request pipeline as production (`configure-app.ts`) — covers registration,
+      login, refresh rotation, replay-attack detection, 2FA enrollment/gated login, and rate
+      limiting. 9/9 passing, alongside 33 unit tests.
+- [x] Full-stack browser verification (Playwright against the production build) caught and
+      fixed a real bug: the mobile navigation drawer collapsed to the header's height instead
+      of the viewport because `backdrop-blur` on an ancestor makes it a CSS containing block
+      for `position: fixed` descendants — fixed by portaling the drawer to `document.body`.
+      See `CHANGELOG.md` for the full list of what browser verification exercised.
 
 **Post-milestone gate:** see `CHANGELOG.md` for the review pass performed before merge.
 

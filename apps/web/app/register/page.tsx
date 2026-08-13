@@ -5,11 +5,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
+import { PasswordStrength } from '@/components/ui/password-strength';
 import { Card } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
 import { storeRefreshToken } from '@/lib/session';
+import { toast } from '@/lib/toast';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -30,9 +33,14 @@ export default function RegisterPage() {
       const result = await api.register({ email, password, firstName, lastName });
       storeRefreshToken(result.refreshToken);
       setSession(result.accessToken, result.user);
+      toast.success('Account created', 'Welcome to Nexus Investments.');
       router.push('/dashboard');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Registration failed. Please try again.');
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -64,16 +72,20 @@ export default function RegisterPage() {
             />
           </Field>
           <Field label="Password" hint="At least 12 characters, one letter and one number.">
-            <Input
-              type="password"
+            <PasswordInput
               required
               minLength={12}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
             />
+            <PasswordStrength password={password} />
           </Field>
-          {error && <p className="text-sm text-negative">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-negative">
+              {error}
+            </p>
+          )}
           <Button type="submit" className="w-full" loading={loading}>
             Create account
           </Button>

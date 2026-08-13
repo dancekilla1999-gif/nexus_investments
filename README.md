@@ -65,17 +65,35 @@ npm run dev:web                      # http://localhost:3000
 ## Testing
 
 ```bash
-npm run test         # apps/api unit tests (29 tests: password hashing, TOTP, envelope
-                      # encryption, duration parsing, and the full AuthService — registration,
-                      # login, 2FA enrollment/verification, refresh rotation, replay detection)
-npm run lint          # tsc --noEmit for both apps
-npm run build          # production build for both apps
+npm run test                              # apps/api unit tests (33: password hashing, TOTP,
+                                           # envelope encryption, duration parsing, the Redis-
+                                           # backed rate limiter under real concurrency, and the
+                                           # full AuthService)
+npm run test:e2e -w apps/api              # apps/api e2e (9, live Postgres + Redis required —
+                                           # see apps/api/test/setup-env.ts): the full HTTP
+                                           # pipeline exercising registration, refresh rotation +
+                                           # replay detection, 2FA-gated login, rate limiting
+npm run lint                              # tsc --noEmit for both apps
+npm run build                             # production build for both apps
 ```
 
-MVP1's auth flow was additionally verified **live** against a real PostgreSQL 16 instance
-during development of this milestone: register → `/users/me` → refresh-token rotation →
-replay-attack detection (a reused, already-rotated refresh token correctly revokes every
-session for that user) → TOTP 2FA enrollment → 2FA-gated re-login. See `CHANGELOG.md`.
+MVP1's auth flow has been verified **live**, twice: once against the API directly (register →
+`/users/me` → refresh-token rotation → replay-attack detection → TOTP 2FA enrollment →
+2FA-gated re-login, all against a real PostgreSQL 16 instance), and again as a full-stack
+Playwright run against the production web build (register → dashboard → every nav section →
+mobile viewport → theme toggle → logout, screenshotted at each step) — which is what caught
+and got a real fix for a `backdrop-filter` containing-block bug in the mobile nav drawer. See
+`CHANGELOG.md` for both.
+
+To run the e2e suite locally, point it at a dedicated database (never reuse dev data) and
+apply migrations once:
+
+```bash
+createdb nexus_investments_test    # or the Docker-compose Postgres equivalent
+DATABASE_URL=postgresql://nexus:nexus_dev_password@localhost:5432/nexus_investments_test \
+  npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+npm run test:e2e -w apps/api
+```
 
 ## Security
 
