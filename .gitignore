@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build output
+dist/
+build/
+.next/
+out/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# testing / coverage
+coverage/
+.nyc_output/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# IDE / OS
+.DS_Store
+.idea/
+*.swp
+
+# prisma
+apps/api/prisma/dev.db
+apps/api/generated/
+
+# secrets/compliance attestations (never committed for real)
+config/compliance/attestation.json

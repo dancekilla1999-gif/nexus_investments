@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Light theme tokens — institutional, low-chroma, one restrained accent. */
+  --color-base: 250 250 251;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-border: 226 228 233;
+  --color-ink: 15 18 24;
+  --color-ink-muted: 100 106 119;
+  --color-accent: 37 99 235; /* restrained blue, used sparingly */
+  --color-accent-ink: 255 255 255;
+  --color-positive: 22 163 74;
+  --color-negative: 220 38 38;
+  --color-warning: 202 138 4;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+/* Dark is the default look of a trading platform — applied unless the user explicitly
+   selected light (docs/08-ui-ux-architecture.md §1). */
+:root:not([data-theme='light']) {
+  --color-base: 8 10 14;
+  --color-surface: 14 17 23;
+  --color-surface-raised: 20 24 31;
+  --color-border: 32 37 46;
+  --color-ink: 237 239 243;
+  --color-ink-muted: 148 155 168;
+  --color-accent: 59 130 246;
+  --color-accent-ink: 8 10 14;
+  --color-positive: 34 197 94;
+  --color-negative: 248 113 113;
+  --color-warning: 234 179 8;
+}
+
+:root[data-theme='light'] {
+  --color-base: 250 250 251;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-border: 226 228 233;
+  --color-ink: 15 18 24;
+  --color-ink-muted: 100 106 119;
+  --color-accent: 37 99 235;
+  --color-accent-ink: 255 255 255;
+  --color-positive: 22 163 74;
+  --color-negative: 220 38 38;
+  --color-warning: 202 138 4;
+}
+
+* {
+  border-color: rgb(var(--color-border));
+}
+
+body {
+  background-color: rgb(var(--color-base));
+  color: rgb(var(--color-ink));
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: rgb(var(--color-accent) / 0.3);
+}

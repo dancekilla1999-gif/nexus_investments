@@ -1,0 +1,122 @@
+import { useAuthStore } from './auth-store';
+import { clearStoredRefreshToken, getStoredRefreshToken, storeRefreshToken } from './session';
+import { ApiErrorBody, LoginResponse, PublicUser, TokensResponse } from './types';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+
+export class ApiError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  const accessToken = useAuthStore.getState().accessToken;
+
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...init.headers,
+    },
+  });
+
+  if (res.status === 401 && retry && getStoredRefreshToken()) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      return request<T>(path, init, false);
+    }
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  const body = await res.json().catch(() => undefined);
+
+  if (!res.ok) {
+    const err = body as ApiErrorBody | undefined;
+    throw new ApiError(
+      err?.error?.code ?? 'UNKNOWN_ERROR',
+      err?.error?.message ?? 'Something went wrong.',
+      res.status,
+    );
+  }
+
+  return body as T;
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const refreshToken = getStoredRefreshToken();
+    if (!refreshToken) return false;
+    try {
+      const tokens = await request<TokensResponse>('/auth/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+      }, false);
+      storeRefreshToken(tokens.refreshToken);
+      const me = await request<PublicUser & { profile?: unknown }>('/users/me', {
+        headers: { Authorization: `Bearer ${tokens.accessToken}` },
+      }, false).catch(() => null);
+      useAuthStore.getState().setSession(tokens.accessToken, (me as PublicUser) ?? useAuthStore.getState().user!);
+      return true;
+    } catch {
+      clearStoredRefreshToken();
+      useAuthStore.getState().clear();
+      return false;
+    }
+  })();
+
+  const result = await refreshInFlight;
+  refreshInFlight = null;
+  return result;
+}
+
+export const api = {
+  register: (input: { email: string; password: string; firstName?: string; lastName?: string; referralCode?: string }) =>
+    request<TokensResponse & { user: PublicUser }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  login: (input: { email: string; password: string }) =>
+    request<LoginResponse>('/auth/login', { method: 'POST', body: JSON.stringify(input) }),
+
+  verifyLogin2fa: (input: { loginTicket: string; code: string }) =>
+    request<TokensResponse & { user: PublicUser }>('/auth/login/2fa', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  logout: (refreshToken: string) =>
+    request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+
+  getMe: () => request<PublicUser & { profile?: Record<string, unknown> }>('/users/me'),
+
+  updateProfile: (input: Record<string, unknown>) =>
+    request<unknown>('/users/me', { method: 'PATCH', body: JSON.stringify(input) }),
+
+  listDevices: () => request<unknown[]>('/users/me/devices'),
+
+  enroll2fa: () => request<{ secret: string; otpauthUrl: string }>('/auth/2fa/enroll', { method: 'POST' }),
+
+  confirm2fa: (code: string) =>
+    request<{ backupCodes: string[] }>('/auth/2fa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
+  refreshAccessToken,
+};
+
+export { API_URL };

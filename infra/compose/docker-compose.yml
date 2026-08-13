@@ -1,0 +1,45 @@
+
+# Local development stack for Nexus Investments.
+# Usage: docker compose -f infra/compose/docker-compose.yml up -d
+#
+# This brings up the *infrastructure* (Postgres, Redis). The apps themselves
+# are run with `npm run dev:api` / `npm run dev:web` from the repo root for a
+# fast local dev loop; see infra/docker/*.Dockerfile for containerized builds
+# used in staging/production.
+
+name: nexus-investments
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus_dev_password
+      POSTGRES_DB: nexus_investments
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexus_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_investments"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - nexus_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  nexus_postgres_data:
+  nexus_redis_data:
