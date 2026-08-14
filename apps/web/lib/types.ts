@@ -154,3 +154,48 @@ export interface DepositRecord {
   detectedAt: string;
   creditedAt: string | null;
 }
+
+// ── Investment management (docs/12) ──
+
+export type StrategyStatus =
+  | 'DRAFT'
+  | 'BACKTESTED'
+  | 'OPEN'
+  | 'SOFT_CLOSED'
+  | 'PAUSED'
+  | 'WINDING_DOWN'
+  | 'CLOSED';
+
+export type DealingFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+export interface InvestmentStrategySummary {
+  slug: string;
+  name: string;
+  description: string;
+  thesis: string | null;
+  status: StrategyStatus;
+  baseAssetSymbol: string;
+
+  /** Terms an investor must see before an amount field exists (docs/12 §3). */
+  minimumInvestment: string;
+  maximumInvestment: string | null;
+  lockupDays: number;
+  redemptionNoticeDays: number;
+  dealingFrequency: DealingFrequency;
+
+  /** Basis points, from the API — never hardcoded in the frontend. */
+  mgmtFeeBps: number;
+  perfFeeBps: number;
+  maxDrawdownBps: number;
+  benchmarkSymbol: string | null;
+
+  /**
+   * Null until the NAV engine has struck a snapshot (MVP15). Null renders as "no track record
+   * yet"; a zero would read as a real measurement of an empty pool.
+   */
+  aum: string | null;
+  navPerUnit: string | null;
+  navStruckAt: string | null;
+  investorCount: number;
+  performance: null;
+}

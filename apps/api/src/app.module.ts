@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { LegalModule } from './legal/legal.module';
 import { WalletModule } from './wallet/wallet.module';
 import { DepositsModule } from './deposits/deposits.module';
+import { InvestmentsModule } from './investments/investments.module';
 import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -47,6 +48,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     LegalModule,
     WalletModule,
     DepositsModule,
+    InvestmentsModule,
     HealthModule,
   ],
   providers: [

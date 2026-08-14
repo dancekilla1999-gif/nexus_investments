@@ -271,13 +271,43 @@ predated pools and treated every `managedAccountId IS NULL` row as personal, whi
 platform at **one strategy per asset** — the second strategy to hold USDC was rejected outright.
 Narrowed in migration `20260814200200_scope_personal_account_uniqueness`.
 
-### MVP12 — Investment Marketplace — ⏳ next
-`Strategy` model with full configuration, publication workflow, marketplace UI, and disclosure
-of lock-up/redemption terms **before** the amount field. Forbidden-claims lint over user-facing
-strings. *Acceptance:* a strategy cannot reach `OPEN` without a passing backtest; publishing copy
-containing "guaranteed" is rejected.
+### MVP12 — Investment Marketplace — ✅ done
+`InvestmentStrategy` with every economic term as configuration, a publication workflow behind
+two gates, the investor-facing marketplace and detail page, and a forbidden-claims gate over all
+user-facing copy.
 
-### MVP13 — Master Strategy Account
+*Acceptance — met.* 25 e2e tests driving the gates through the API rather than asserting the
+service contains a check:
+- **Backtest gate.** `OPEN` is refused with no backtest, refused when the backtest drew down
+  further than the strategy advertises (a 10% product cannot be justified by a run that lost
+  30%), and refused through the generic status setter as well as the dedicated route — two
+  doors to the same room, both locked. On success the audit row records the measured and
+  configured drawdown side by side.
+- **Forbidden-claims gate.** Promises of outcome are rejected in English and Russian, at
+  creation *and* again at publication, with the offending field and matched text returned so an
+  author can fix it. 35 unit tests cover the patterns.
+- **Terms disclosed before an amount field exists**, straight from the fee engine — the
+  frontend hardcodes no rate.
+- **No fabricated track record**: AUM, NAV and performance are `null` until the NAV engine
+  strikes a snapshot, and the UI says "there is none yet" rather than drawing a chart of zeros.
+- Economic terms freeze once an investor holds the strategy; descriptive copy stays editable.
+- `SEGREGATED_COPY` is refused at creation rather than silently producing a strategy with no
+  accounting behind it.
+
+*Two bugs found while building it:*
+- The Russian half of the claims gate matched **nothing**: `\b` is defined over `[A-Za-z0-9_]`,
+  so every Cyrillic letter reads as a non-word character and the boundaries landed wrong. Now
+  `\p{L}` with the `u` flag.
+- The same rules would have blocked the *required* disclaimer — "прошлые результаты не
+  гарантируют будущих", "past results do not guarantee future returns" — forcing authors to
+  delete their own risk warning. Negation is now checked in a window around the match, with a
+  bare "no" deliberately excluded so "No fees, guaranteed profit" is still caught.
+
+Also fixed: `MarkdownLite` rendered each hard-wrapped source line as its own block, which split
+the risk disclosure's warning callout mid-sentence and dropped its tail out of the warning box
+into plain body text.
+
+### MVP13 — Master Strategy Account — ⏳ next
 Pool cash and positions, subscription/redemption at dealing points, `PENDING_SUBSCRIPTION`
 bucket. *Acceptance:* a subscription placed between two marks cannot capture P&L struck before
 it — the dilution test.

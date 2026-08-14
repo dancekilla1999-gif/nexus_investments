@@ -1,5 +1,89 @@
 # Changelog
 
+## MVP12 — Investment marketplace and the publication gates
+
+**Date:** 2026-08-14
+
+Investment products, and the two gates that decide whether one may take a single dollar. The
+marketplace is the visible part; the gates are the point.
+
+### The backtest gate
+
+A strategy cannot reach `OPEN` without a `BacktestResult` — and "passing" is not self-reported.
+The measured max drawdown must be within the ceiling the strategy itself advertises: a product
+promising a 10% limit cannot be justified by a run that lost 30%. Both the dedicated route and
+the generic status setter enforce it, because two doors to the same room both need locking. On
+success the audit row records the measured and configured drawdown together, so the decision can
+be re-examined later without re-running anything.
+
+### The forbidden-claims gate
+
+A promise of guaranteed return is not a copywriting slip; it is the single sentence most likely
+to turn a marketing page into a mis-selling case, and a reviewer's attention is not a control.
+Copy is scanned at creation *and* again at publication — copy can be edited in between, and
+publication is the last moment before real money is exposed to it. Rejections name the field and
+the matched text so the author can fix it rather than guess.
+
+**Two bugs found while building this gate, both of which would have made it worse than useless:**
+
+1. **The Russian rules matched nothing.** `\b` in JavaScript is defined over `[A-Za-z0-9_]`, so
+   every Cyrillic letter counts as a non-word character and the word boundaries landed in the
+   wrong places. The gate looked complete and silently passed `Гарантированная прибыль`. Now
+   `\p{L}` with the `u` flag. The platform's operator writes in Russian — a rule that only
+   catches English is a rule a translator walks straight through.
+2. **The rules would have blocked the required disclaimer.** "Past results do not guarantee
+   future returns" and "прошлые результаты не гарантируют будущих" are the sentences regulators
+   expect to see, and the naive pattern flagged them as claims — forcing authors to delete their
+   own risk warning. Negation is now evaluated in a window around the match, not as a lookbehind,
+   because it is not always adjacent ("Nothing here guarantees a result"). A bare "no" is
+   deliberately *not* a negation marker, so "No fees, guaranteed profit" is still caught.
+
+### No fabricated track record
+
+AUM, NAV per unit and performance are `null` until the NAV engine has struck a snapshot, and the
+UI says "there is none yet" and explains that the backtest was a simulation. Zero-filling them
+would have rendered a chart of zeros, which is a fabricated track record with extra steps.
+
+### Terms before the amount field
+
+Minimum, lock-up, redemption notice, dealing frequency, drawdown limit and both fee rates come
+from the API and are shown before anything asks for a number. The frontend hardcodes no rate.
+
+Under the 50% profit share the fee and the drawdown cap are displayed *together*, with the split
+stated from the investor's side — "you keep 50%, the manager takes 50%" — plus a worked example
+(a 20% gross year leaves roughly 10%). The two numbers only make sense read as a pair: the
+manager shares the upside and not the downside, and the cap is what bounds that.
+
+Economic terms freeze once an investor holds the strategy; descriptive copy stays editable.
+Changing fees under someone who already subscribed is a different act from configuring a draft.
+
+`SEGREGATED_COPY` custody is refused at creation rather than producing a strategy whose
+accounting silently does not exist.
+
+### Operator roles
+
+`INVESTMENT_MANAGER`, `TRADER`, `FINANCE` and `ANALYST` join the role enum (docs/12 §8). The
+admin namespace has no endpoint that moves value, and the ledger's ownership boundary means one
+could not be added by accident.
+
+### Also fixed
+
+`MarkdownLite` rendered every hard-wrapped source line as its own block, which split the risk
+disclosure's warning callout mid-sentence and dropped the rest of it out of the warning box into
+plain body text. On a risk disclosure, a warning that visually ends halfway through its own
+sentence is not a cosmetic problem. Lines now join into blocks, with lazy continuation so a
+wrapped callout stays inside its box.
+
+### Verification
+
+35 unit tests on the claims gate — half of them asserting that honest descriptions and required
+disclaimers pass, because a gate that blocks legitimate copy gets routed around or switched off.
+25 e2e tests driving every gate through the API. 217 tests total (99 unit/integration including
+live Sepolia, 118 e2e against live PostgreSQL and Redis), plus headless-browser verification of
+both investment pages at desktop and mobile widths.
+
+---
+
 ## MVP11 — Investment accounting and the ownership boundary
 
 **Date:** 2026-08-14

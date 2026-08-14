@@ -26,11 +26,28 @@ datasource db {
 // Identity & access (MVP1 — live)
 // ─────────────────────────────────────────────────────────────────────────
 
+/// Operator roles. The full matrix of what each may and may not do is docs/12 §8; two rules
+/// govern the whole set:
+///
+///  - No role, SUPERADMIN included, has a path to user or pool funds. Being an administrator
+///    confers configuration authority, never economic authority — enforced by the ledger's
+///    ownership-boundary trigger, so it holds even against someone who can change application
+///    code but cannot ship a migration unreviewed.
+///  - Risk-limit and fee-schedule changes are dual-control: proposed by one role, approved by
+///    another, both recorded.
 enum UserRole {
   USER
   SUPPORT
   COMPLIANCE
   RISK_OPS
+  /// Creates and configures investment products; cannot publish one without a passing backtest.
+  INVESTMENT_MANAGER
+  /// Places orders for explicitly assigned strategies only. Cannot change limits or move value.
+  TRADER
+  /// Views fee calculations and triggers crystallisation runs; cannot change rates.
+  FINANCE
+  /// Read-only analytics.
+  ANALYST
   ADMIN
   SUPERADMIN
 }

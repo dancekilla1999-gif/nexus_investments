@@ -5,6 +5,7 @@ import {
   ApiErrorBody,
   DepositAddress,
   DepositRecord,
+  InvestmentStrategySummary,
   Device,
   LoginResponse,
   Profile,
@@ -167,6 +168,12 @@ export const api = {
     request<DepositAddress>(`/wallet/deposits/address/${chainKey}`, { method: 'POST' }),
 
   listDeposits: () => request<DepositRecord[]>('/wallet/deposits'),
+
+  listInvestmentStrategies: () =>
+    request<InvestmentStrategySummary[]>('/investments/strategies'),
+
+  getInvestmentStrategy: (slug: string) =>
+    request<InvestmentStrategySummary>(`/investments/strategies/${slug}`),
 
   refreshAccessToken,
 };
