@@ -17,3 +17,9 @@ process.env.JWT_REFRESH_TTL = process.env.JWT_REFRESH_TTL ?? '30d';
 process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? 'silent';
 process.env.NOTIFICATIONS_EMAIL_PROVIDER = process.env.NOTIFICATIONS_EMAIL_PROVIDER ?? 'console';
 process.env.THROTTLE_LIMIT_DEFAULT = process.env.THROTTLE_LIMIT_DEFAULT ?? '1000';
+
+// Background jobs are driven explicitly in tests: a timer firing mid-assertion would make a
+// suite that passes locally fail in CI for reasons unrelated to the code under test.
+process.env.DEPOSIT_WATCHER_DISABLED = process.env.DEPOSIT_WATCHER_DISABLED ?? '1';
+process.env.RECONCILIATION_DISABLED = process.env.RECONCILIATION_DISABLED ?? '1';
+process.env.NAV_REVALUATION_DISABLED = process.env.NAV_REVALUATION_DISABLED ?? '1';

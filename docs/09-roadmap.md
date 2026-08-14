@@ -363,12 +363,47 @@ silently dropped the tail of any total above ~100. The verification helper was i
 step, and it made a correct apportionment read as wrong. Intermediates now use a
 high-precision Decimal clone.
 
-### MVP15 — NAV Engine — ⏳ next
+### MVP15 — NAV Engine — ✅ done
 Scheduled and event-driven revaluation, immutable `NavSnapshot`, sourced marks with provenance.
-*Acceptance:* no code path writes `navPerUnit` outside the engine; a manager-supplied price is
-rejected.
 
-### MVP16 — High Water Mark
+*Acceptance — met.* `navPerUnit` is written by `NavService` and nowhere else — it is not a column
+on `investment_strategies` at all, so there is no field to hand-edit. And a manager-supplied
+price is not rejected so much as **unrepresentable**: `strikeSnapshot(strategyId, isDealingPoint)`
+takes no price, `MarkRegistry` exposes no setter, and a test asserts both signatures so a future
+refactor cannot quietly add one.
+
+Prices come from a `MarkProvider` chain: `identity` (an asset against itself needs no feed) then
+CoinGecko, verified against the **live public API** alongside the existing live-Sepolia tests.
+Cross-rates go through USD; every mark carries its provider and the provider's own observation
+time, and both are stored per-asset on the snapshot — a historical NAV without provenance is an
+assertion nobody can check, and a performance fee computed from it is indefensible.
+
+**The refusals are the milestone.** Valuation fails rather than:
+- valuing an unpriceable holding at zero (which understates NAV, every investor's stake, and the
+  fee base — wrong in a direction someone benefits from);
+- using a stale price (age judged on the provider's `asOf`, never on when we called — a dead feed
+  answers instantly with yesterday's number);
+- dividing by a zero or negative quote.
+
+The Redis mark cache stores `asOf` and re-checks age on read, so a cache hit cannot launder a
+stale price into a fresh-looking one. Scheduled revaluation marks every live strategy and reports
+per-strategy failures rather than letting one dead feed block the rest or leave a strategy
+silently stuck on an old NAV.
+
+`DealingService` now delegates to the engine: **one valuation path**, because two ways to value a
+pool is two answers to "what is this worth?".
+
+*Naming bug found by the tests:* the dealing-point parameter was called `markSource` and an
+operator's value was written onto the snapshot as its provenance. Renamed to `reason` — it is an
+audit-log note about *why* a deal was struck, and it now sits in the audit trail while the
+snapshot carries the engine's own provenance. The old name implied an operator supplies marks,
+which is exactly the confusion this milestone exists to prevent.
+
+*Also deliberate:* `identity` does **not** mark stablecoins at par against each other. USDT is
+not definitionally worth 1 USDC, and assuming so would overstate NAV during a depeg — precisely
+when the number matters most.
+
+### MVP16 — High Water Mark — ⏳ next
 Per-position HWM as a unit price, ratchet-only. *Acceptance:* the docs/12 §6 table is a test —
 recovery to a previously-charged level accrues zero fee.
 

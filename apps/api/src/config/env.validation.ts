@@ -66,6 +66,21 @@ export const envSchema = z.object({
   /** Set to '1' to keep custody reconciliation from starting (tests drive it manually). */
   RECONCILIATION_DISABLED: z.string().optional(),
 
+  // ── NAV engine (MVP15) ──
+  COINGECKO_BASE_URL: z.string().default('https://api.coingecko.com/api/v3'),
+  COINGECKO_API_KEY: z.string().optional(),
+  /**
+   * How old a mark may be before valuation refuses it. A dead feed answers instantly with
+   * yesterday's price, so this is the only thing standing between a frozen oracle and a NAV
+   * that looks perfectly healthy.
+   */
+  MARK_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(900),
+  /** Short cache so several strategies revaluing together make one upstream call. */
+  MARK_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+  NAV_REVALUATION_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
+  /** Set to '1' to keep scheduled revaluation from starting (tests drive it manually). */
+  NAV_REVALUATION_DISABLED: z.string().optional(),
+
   NOTIFICATIONS_EMAIL_PROVIDER: z.enum(['console', 'resend', 'ses']).default('console'),
 });
 

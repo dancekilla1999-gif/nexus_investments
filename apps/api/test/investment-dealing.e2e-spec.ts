@@ -167,11 +167,11 @@ describe('Investment dealing (e2e)', () => {
       .send({ amount });
   }
 
-  async function strike(markSource = 'test:manual') {
+  async function strike(reason = 'test deal') {
     const res = await request(server())
       .post(`/api/v1/admin/investments/strategies/${strategyId}/dealing-point`)
       .set(auth(managerToken))
-      .send({ markSource })
+      .send({ reason })
       .expect(201);
     return res.body;
   }
@@ -448,7 +448,7 @@ describe('Investment dealing (e2e)', () => {
       const res = await request(server())
         .post(`/api/v1/admin/investments/strategies/${strategyId}/dealing-point`)
         .set(auth(managerToken))
-        .send({ markSource: 'test:manual' })
+        .send({ reason: 'test deal' })
         .expect(400);
       expect(res.body.error.code).toBe('UNPRICEABLE_POOL');
     });
@@ -456,11 +456,18 @@ describe('Investment dealing (e2e)', () => {
     it('records the valuation immutably, with its source', async () => {
       const alice = await investor('10000');
       await subscribe(alice.token, '1000').expect(201);
-      const result = await strike('test:oracle-A');
+      const result = await strike('quarterly deal');
 
       const snapshot = await prisma.navSnapshot.findUniqueOrThrow({ where: { id: result.snapshotId } });
-      expect(snapshot.markSource).toBe('test:oracle-A');
+      // Provenance is the engine's, not the operator's: the caller's note goes to the audit log
+      // and cannot appear here in place of where the prices actually came from.
+      expect(snapshot.markSource).not.toBe('quarterly deal');
       expect(snapshot.isDealingPoint).toBe(true);
+
+      const audit = await prisma.auditLog.findFirst({
+        where: { action: 'investment.dealing_point_struck', entityId: snapshot.id },
+      });
+      expect(audit?.metadata).toMatchObject({ reason: 'quarterly deal' });
 
       await expect(
         prisma.navSnapshot.update({ where: { id: snapshot.id }, data: { navPerUnit: '99' } }),
@@ -472,7 +479,7 @@ describe('Investment dealing (e2e)', () => {
       await request(server())
         .post(`/api/v1/admin/investments/strategies/${strategyId}/dealing-point`)
         .set(auth(alice.token))
-        .send({ markSource: 'self-serve' })
+        .send({ reason: 'self-serve' })
         .expect(403);
     });
   });

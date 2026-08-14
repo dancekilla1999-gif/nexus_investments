@@ -12,11 +12,9 @@ import { AuditService } from '../audit/audit.service';
 import { formatAmount } from '../ledger/amount.util';
 import { PLATFORM_SYSTEM_USER_ID } from '../ledger/ledger.constants';
 import { LedgerService } from '../ledger/ledger.service';
+import { NavService } from '../nav/nav.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-
-/** Unit price used for the very first units a strategy ever issues. */
-const INCEPTION_UNIT_PRICE = new Prisma.Decimal(1);
 
 /** The scale the database stores money and units at — `Decimal(36, 18)`. */
 const STORED_DP = 18;
@@ -76,53 +74,30 @@ export class DealingService {
     private readonly ledger: LedgerService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly nav: NavService,
   ) {}
 
   /**
-   * Values a strategy's pool from what it actually holds.
+   * Values a strategy's pool. Delegates to the NAV engine — there is exactly one valuation
+   * path in the platform, and it is the one that sources prices and records their provenance.
    *
-   * MVP13 pools hold only their base asset, so NAV is the pool's cash balance. When trading
-   * lands, positions are valued from sourced marks (docs/12 §5) — never from a number anyone
-   * supplies, because whoever can set prices can author their own performance fee. Rather than
-   * silently valuing an unmarkable holding at zero, this throws: a NAV that quietly omits an
-   * asset is worse than no NAV at all.
+   * Kept as a method here so existing callers and tests have a stable entry point, but it owns
+   * no arithmetic of its own: two ways to value a pool is two answers to "what is this worth?".
    */
   async valuePool(strategyId: string): Promise<Prisma.Decimal> {
-    const strategy = await this.prisma.investmentStrategy.findUniqueOrThrow({ where: { id: strategyId } });
-
-    const poolBalances = await this.prisma.balance.findMany({
-      where: { type: LedgerAccountType.STRATEGY_POOL, ledgerAccount: { strategyId } },
-      include: { asset: true },
-    });
-
-    let nav = new Prisma.Decimal(0);
-    for (const balance of poolBalances) {
-      if (balance.assetId === strategy.baseAssetId) {
-        nav = nav.plus(balance.amount);
-        continue;
-      }
-      if (balance.amount.isZero()) continue;
-
-      throw new BadRequestException({
-        code: 'UNMARKABLE_HOLDING',
-        message:
-          `Strategy pool holds ${formatAmount(balance.amount)} ${balance.asset.symbol}, which cannot be valued ` +
-          'until market-data marks are wired in (MVP15). Refusing to strike a NAV that omits it.',
-      });
-    }
-
-    return nav;
+    return (await this.nav.valuePool(strategyId)).poolNav;
   }
 
   /**
    * Strikes a dealing point and settles everything waiting on one.
    *
-   * `markSource` records where the valuation came from, and is stored on the snapshot so a
-   * price can always be traced to its origin.
+   * `reason` is an operator note for the audit log, not an input to the valuation. Prices come
+   * from the NAV engine's providers and their provenance is written onto the snapshot; nothing
+   * a caller passes here can move the number.
    */
   async strikeDealingPoint(
     strategyId: string,
-    markSource: string,
+    reason: string,
     actorId: string,
   ): Promise<DealingPointResult> {
     const strategy = await this.prisma.investmentStrategy.findUnique({
@@ -134,12 +109,11 @@ export class DealingService {
     }
 
     // ── 1. Value the pool, before any flow touches it ──
-    const poolNavBefore = await this.valuePool(strategyId);
+    // The NAV engine sources every price and records where it came from.
     const unitsBefore = strategy.totalUnits;
-
-    const navPerUnit = unitsBefore.isZero()
-      ? INCEPTION_UNIT_PRICE
-      : poolNavBefore.dividedBy(unitsBefore);
+    const snapshot = await this.nav.strikeSnapshot(strategyId, true);
+    const poolNavBefore = snapshot.poolNav;
+    const navPerUnit = snapshot.navPerUnit;
 
     if (navPerUnit.lessThanOrEqualTo(0)) {
       // A pool worth nothing while units exist cannot price a deal: issuing units at zero would
@@ -149,18 +123,6 @@ export class DealingService {
         message: 'Pool NAV is zero or negative while units are outstanding; a dealing point cannot be struck.',
       });
     }
-
-    const snapshot = await this.prisma.navSnapshot.create({
-      data: {
-        strategyId,
-        poolNav: poolNavBefore,
-        totalUnits: unitsBefore,
-        navPerUnit,
-        cashComponent: poolNavBefore,
-        markSource,
-        isDealingPoint: true,
-      },
-    });
 
     // ── 2. Subscriptions, at the price struck above ──
     const subscriptionsSettled = await this.settleSubscriptions(strategy, snapshot.id, navPerUnit);
@@ -184,7 +146,8 @@ export class DealingService {
         strategy: strategy.slug,
         navPerUnit: formatAmount(navPerUnit),
         poolNav: formatAmount(poolNavBefore),
-        markSource,
+        reason,
+        markSource: snapshot.markSource,
         subscriptionsSettled,
         redemptionsSettled,
         redemptionsQueued,

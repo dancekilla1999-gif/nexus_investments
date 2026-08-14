@@ -38,11 +38,16 @@ export class RedeemDto {
 }
 
 export class StrikeDealingPointDto {
-  @ApiProperty({
-    example: 'manual:risk-ops',
-    description: 'Where the valuation came from. Stored on the snapshot so a price is traceable.',
-  })
+  /**
+   * Why this dealing point was struck — an operator annotation, recorded in the audit log.
+   *
+   * Deliberately NOT a price source. The NAV engine sources every mark itself and writes its own
+   * provenance onto the snapshot; there is no field here, or anywhere, through which an operator
+   * can influence a valuation. Naming this `markSource` (as an earlier version did) implied
+   * otherwise, which is exactly the confusion worth preventing.
+   */
+  @ApiProperty({ example: 'scheduled daily deal', description: 'Operator note for the audit log.' })
   @IsString()
   @MaxLength(120)
-  markSource!: string;
+  reason!: string;
 }

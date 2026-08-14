@@ -1,5 +1,90 @@
 # Changelog
 
+## MVP15 — NAV Engine
+
+**Date:** 2026-08-14
+
+Valuation, and the two properties that decide whether anyone can trust the number.
+
+### `navPerUnit` has exactly one author
+
+It is written by `NavService` and by nothing else. It is not a column on
+`investment_strategies` at all — it lives only on an append-only snapshot, so there is no field
+for anyone to hand-edit.
+
+### A manager-supplied price is not rejected — it is unrepresentable
+
+`strikeSnapshot(strategyId, isDealingPoint)` takes no price. `MarkRegistry` has no setter. No
+DTO, admin route or service method anywhere accepts a valuation. A test asserts both signatures
+and the absence of any `set*`/`put*`/`override*` method on the registry, so a future refactor
+cannot quietly add one. Whoever can set prices can author their own performance fee, so the
+control is the shape of the code rather than a check inside it.
+
+### Prices are sourced, with provenance
+
+A `MarkProvider` chain: `identity` first (an asset against itself needs no feed, and asking one
+would invent a failure mode where there is no uncertainty), then CoinGecko — verified against the
+**live public API**, alongside the existing live-Sepolia tests. Cross-rates go through USD.
+
+Every mark carries its provider and the provider's **own** observation time, and both are stored
+per-asset on the snapshot. Without that, a historical NAV is an assertion nobody can check, and a
+performance fee computed from it is indefensible.
+
+`identity` deliberately does **not** mark stablecoins at par against each other. USDT is not
+definitionally worth 1 USDC — it has traded well away from it — and assuming so would overstate
+NAV precisely when the number matters most.
+
+### The refusals are the milestone
+
+An engine that always produces a number is an engine that will produce a wrong one. Valuation
+fails rather than:
+
+- **valuing an unpriceable holding at zero.** That understates NAV, which understates every
+  investor's stake and shrinks the performance-fee base — wrong in a direction someone benefits
+  from, which is the worst kind of wrong.
+- **using a stale price.** Age is judged on the provider's `asOf`, never on when we called: a
+  dead feed answers instantly with yesterday's number, and judging freshness by our own clock
+  makes a frozen oracle look perfectly healthy. The Redis cache stores `asOf` and re-checks on
+  read, so a cache hit cannot launder a stale price into a fresh-looking one.
+- **dividing by a zero or negative quote.**
+
+Scheduled revaluation marks every live strategy, and reports per-strategy failures rather than
+letting one dead feed block the rest — or leaving a strategy silently stuck on a NAV that is no
+longer true.
+
+### One valuation path
+
+`DealingService` now delegates to the engine instead of computing its own pool value. Two ways to
+value a pool is two answers to "what is this worth?".
+
+### A naming bug the tests caught
+
+The dealing-point parameter was called `markSource`, and an operator's value was written onto the
+snapshot as its provenance — the snapshot claimed the price came from wherever the caller said.
+Renamed to `reason`: it is an audit-log note about *why* a deal was struck. It now sits in the
+audit trail, and the snapshot carries the engine's own provenance. The old name implied an
+operator supplies marks, which is the exact confusion this milestone exists to prevent.
+
+### Verification
+
+10 unit tests on the providers (cross-rates, stalest-leg timestamps, rate limiting, unreachable
+feeds, missing timestamps treated as maximally stale rather than fresh), 17 e2e tests on the
+engine including two against the live CoinGecko API. 306 total (129 unit/integration, 177 e2e
+against live PostgreSQL and Redis).
+
+One transient failure was observed in an early full-suite run (`ECONNRESET` on a supertest
+connection, not an assertion); three subsequent full runs passed 177/177, and the affected suite
+passes 25/25 in isolation.
+
+### Infrastructure note
+
+`prisma migrate diff` writes its "update available" banner to stdout, which corrupted the
+generated migration file and left a half-applied migration row in both databases. The file is now
+hand-written; `CLAUDE.md` already warns against `migrate dev`, and this is the same class of
+trap.
+
+---
+
 ## MVP14 — Allocation Engine
 
 **Date:** 2026-08-14

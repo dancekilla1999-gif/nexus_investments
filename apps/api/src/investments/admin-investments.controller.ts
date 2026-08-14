@@ -66,7 +66,7 @@ export class AdminInvestmentsController {
     @Param('id') id: string,
     @Body() dto: StrikeDealingPointDto,
   ) {
-    return this.dealing.strikeDealingPoint(id, dto.markSource, user.sub);
+    return this.dealing.strikeDealingPoint(id, dto.reason, user.sub);
   }
 
   /**

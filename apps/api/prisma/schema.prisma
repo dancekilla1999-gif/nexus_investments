@@ -1499,6 +1499,10 @@ model NavSnapshot {
   /// Where the marks came from. A manager cannot supply a price — whoever sets prices authors
   /// their own performance fee.
   markSource String
+  /// Per-asset provenance: quantity, price, value, provider and the provider's own observation
+  /// time. This is what makes a historical NAV auditable rather than merely recorded — without
+  /// it, "the pool was worth X" is an assertion nobody can check.
+  marks      Json?
   /// True when this snapshot is a dealing point: subscriptions and redemptions settle at it.
   isDealingPoint Boolean @default(false)
 

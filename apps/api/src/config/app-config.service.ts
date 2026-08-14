@@ -116,4 +116,30 @@ export class AppConfigService {
   get reconciliationEnabled() {
     return this.config.get('RECONCILIATION_DISABLED', { infer: true }) !== '1';
   }
+
+  // ── NAV engine ──────────────────────────────────────────────────────────
+
+  get coingeckoBaseUrl() {
+    return this.config.get('COINGECKO_BASE_URL', { infer: true });
+  }
+
+  get coingeckoApiKey() {
+    return this.config.get('COINGECKO_API_KEY', { infer: true });
+  }
+
+  get markMaxAgeSeconds() {
+    return this.config.get('MARK_MAX_AGE_SECONDS', { infer: true });
+  }
+
+  get markCacheTtlSeconds() {
+    return this.config.get('MARK_CACHE_TTL_SECONDS', { infer: true });
+  }
+
+  get navRevaluationIntervalMs() {
+    return this.config.get('NAV_REVALUATION_INTERVAL_MS', { infer: true });
+  }
+
+  get navRevaluationEnabled() {
+    return this.config.get('NAV_REVALUATION_DISABLED', { infer: true }) !== '1';
+  }
 }
