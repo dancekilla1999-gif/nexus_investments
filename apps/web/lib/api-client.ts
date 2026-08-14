@@ -9,7 +9,10 @@ import {
   PublicUser,
   RiskDisclosureAgreement,
   TokensResponse,
+  TransferResult,
   UpdateProfileInput,
+  WalletAsset,
+  WalletBalance,
 } from './types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
@@ -143,6 +146,16 @@ export const api = {
 
   acceptRiskDisclosureAgreement: () =>
     request<AcceptanceStatus>('/legal/risk-disclosure/accept', { method: 'POST' }),
+
+  getWalletBalances: () => request<WalletBalance[]>('/wallet/balances'),
+
+  getWalletAssets: () => request<WalletAsset[]>('/wallet/assets'),
+
+  transferInternal: (input: { from: string; to: string; assetId: string; amount: string }) =>
+    request<TransferResult>('/wallet/transfers', { method: 'POST', body: JSON.stringify(input) }),
+
+  sandboxFaucet: (input: { assetId: string; amount: string }) =>
+    request<TransferResult>('/wallet/sandbox/faucet', { method: 'POST', body: JSON.stringify(input) }),
 
   refreshAccessToken,
 };

@@ -5,10 +5,11 @@ PostgreSQL). Built as a modular monolith cut along real service boundaries, with
 double-entry ledger, multi-chain custody design, and an explainable AI signal engine — not a
 themed frontend over someone else's exchange.
 
-> **Status:** Architecture complete. **MVP1 (Auth + User + Dashboard) is implemented, tested,
-> and has been run end-to-end against a real PostgreSQL database.** MVP2–MVP10 are fully
-> designed in `docs/` and not yet coded — see `docs/09-roadmap.md` for what's next and how to
-> pick it up.
+> **Status:** Architecture complete. **MVP1 (Auth + User + Dashboard) is done. MVP2's
+> double-entry ledger and wallet are done** — conservation, idempotency and double-spend
+> prevention are enforced by the database and proven by 87 tests against a live PostgreSQL.
+> On-chain deposit detection is the remaining piece of MVP2; MVP3–MVP11 are designed in `docs/`
+> and not yet coded. See `docs/09-roadmap.md` for exactly what is and isn't built.
 >
 > This platform moves **no real money in this repository's current state.** Everything runs
 > in `PLATFORM_MODE=sandbox` by default; see `docs/01-PRD.md §8` and
@@ -67,15 +68,14 @@ npm run dev:web                      # http://localhost:3000
 ## Testing
 
 ```bash
-npm run test                              # apps/api unit tests (41: password hashing, TOTP,
-                                           # envelope encryption, duration parsing, the Redis-
-                                           # backed rate limiter under real concurrency, the full
-                                           # AuthService, and the risk-disclosure LegalService)
-npm run test:e2e -w apps/api              # apps/api e2e (13, live Postgres + Redis required —
-                                           # see apps/api/test/setup-env.ts): the full HTTP
-                                           # pipeline exercising registration, refresh rotation +
-                                           # replay detection, 2FA-gated login, rate limiting, and
-                                           # the risk-disclosure read/accept flow
+npm run test                              # apps/api unit tests (46)
+npm run test:e2e -w apps/api              # apps/api e2e (41; live Postgres + Redis required —
+                                           # see apps/api/test/setup-env.ts). Includes the
+                                           # ledger's correctness suite: conservation enforced
+                                           # by DB trigger even when the service is bypassed,
+                                           # idempotent replay, ten concurrent spends of the
+                                           # same funds leaving exactly one winner, append-only
+                                           # history, and projection-vs-entries reconciliation
 npm run lint                              # tsc --noEmit for both apps
 npm run build                             # production build for both apps
 ```

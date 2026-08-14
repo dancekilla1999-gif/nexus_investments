@@ -87,3 +87,29 @@ export interface AcceptanceStatus {
   agreementVersion: number;
   acceptedAt: string | null;
 }
+
+export type LedgerBucket = 'AVAILABLE' | 'TRADING' | 'LOCKED' | 'FUNDING' | 'BONUS' | 'PENDING';
+
+export interface WalletBalance {
+  assetId: string;
+  assetSymbol: string;
+  chainKey: string;
+  type: LedgerBucket;
+  /** Always a decimal string, never a number — an 18-decimal value has no exact float64. */
+  amount: string;
+}
+
+export interface WalletAsset {
+  id: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  chainKey: string;
+  chainName: string;
+  isTestnet: boolean;
+}
+
+export interface TransferResult {
+  transactionId: string;
+  balances: WalletBalance[];
+}

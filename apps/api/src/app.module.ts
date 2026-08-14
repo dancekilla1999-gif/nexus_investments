@@ -9,10 +9,12 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { RedisThrottlerStorage } from './redis/redis-throttler.storage';
 import { AuditModule } from './audit/audit.module';
+import { LedgerModule } from './ledger/ledger.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { LegalModule } from './legal/legal.module';
+import { WalletModule } from './wallet/wallet.module';
 import { HealthModule } from './health/health.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -37,10 +39,12 @@ import { RolesGuard } from './common/guards/roles.guard';
     }),
     PrismaModule,
     AuditModule,
+    LedgerModule,
     NotificationsModule,
     AuthModule,
     UsersModule,
     LegalModule,
+    WalletModule,
     HealthModule,
   ],
   providers: [

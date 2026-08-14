@@ -1,5 +1,86 @@
 # Changelog
 
+## MVP2 — Double-entry ledger and wallet
+
+**Date:** 2026-08-14
+
+The accounting core of the platform. The roadmap's instruction for this milestone was to build
+the ledger first and prove it correct *before* touching blockchain integration, on the grounds
+that ledger correctness is a consistency problem that does not depend on chains at all. That is
+what this delivery is.
+
+### The ledger
+
+`LedgerService` is the only write path for value anywhere in the platform — there is
+deliberately no method that sets a balance directly. It guarantees three things:
+
+1. **Conservation.** Every posting balances to zero per asset. Checked in the service for a
+   useful error message, and enforced independently by a deferred PostgreSQL constraint trigger
+   so that a bug in some future module still cannot write an unbalanced transaction. There is a
+   test that bypasses the service entirely and writes raw SQL to prove the database refuses it.
+2. **Idempotency.** A repeated `idempotencyKey` never applies twice — including when two
+   callers race the same key concurrently and one loses on the unique index.
+3. **No double-spend.** Postings against an account serialize on a row lock taken in
+   deterministic id order (so concurrent postings cannot deadlock). Ten parallel attempts to
+   spend the same balance leave exactly one succeeding.
+
+Also enforced at the database level: financial history is append-only (`ledger_entries`,
+`ledger_transactions`, `audit_logs`, `risk_disclosure_acceptances` reject UPDATE and DELETE by
+trigger — corrections are compensating entries, never edits), user balances can never go
+negative, and a partial unique index closes the NULL-distinctness gap that would otherwise have
+allowed a user to hold two separate "available USDT" accounts silently splitting their balance.
+
+The `balances` table was re-keyed 1:1 to the ledger account it describes, rather than to a
+separate `(userId, assetId, type)` tuple that could drift from it. `verifyReconciliation()`
+compares every stored balance against a from-scratch recomputation of its entries; a test
+deliberately corrupts a projection to confirm the drift is detected rather than assumed away.
+
+### The wallet
+
+Balances, internal transfers between a user's own buckets, and asset listing — all posting
+through the ledger. `LOCKED` and `PENDING` are rejected as user transfer endpoints server-side
+(funds reserved against an order that the user can move back at will are not reserved at all).
+A real Wallet page and live dashboard balances replace the previous placeholders.
+
+A clearly-labeled **sandbox testnet faucet** credits play money so the wallet can be exercised
+before on-chain deposits exist. It runs through the exact same double-entry path a real deposit
+will — debit the platform boundary, credit the user — so it proves the deposit accounting
+rather than bypassing it, and the API refuses it outright when `PLATFORM_MODE=live`.
+
+### Two design flaws found by writing the tests
+
+Both of these were discovered because the suite runs against a real PostgreSQL rather than a
+mock, and both would have been considerably more expensive to find later:
+
+- **There was no way to originate value.** Double-entry requires a deposit to debit *something*
+  in order to credit a user, and every account type in the schema was one that must never go
+  negative — so recording a deposit was structurally impossible. Fixed by adding a
+  `LedgerAccountType.EXTERNAL` platform-boundary contra-account whose (negative) balance is the
+  platform's cumulative obligation to its users — which is precisely the figure custody
+  reconciliation will compare against on-chain holdings.
+- **Prisma silently swallowed a constraint violation raised at COMMIT.** An unbalanced write was
+  correctly rolled back by the deferred trigger, but the caller was told it had succeeded. On a
+  financial API that is the difference between "your transfer was rejected" and "your transfer
+  went through" — with no transfer. Fixed by issuing `SET CONSTRAINTS ALL IMMEDIATE` at the end
+  of every ledger transaction, forcing the check to run inside the transaction where the error
+  propagates normally. Verified empirically both ways before and after.
+
+A third, smaller one: `Decimal.toString()` emits exponential notation for very small
+magnitudes, so a balance of one wei serialized as `"3e-18"` and would have reached a user's
+wallet screen verbatim. All amounts now cross the API as positional decimal strings, never as
+JavaScript numbers (an 18-decimal value has no exact float64 representation).
+
+### Verified
+
+- [x] 46 unit tests, 41 e2e tests against live PostgreSQL + Redis — 87 total, all passing.
+- [x] `npm run lint` and `npm run build` clean for both apps.
+- [x] Six migrations apply cleanly from scratch; DB triggers verified directly in `psql` before
+      any code was written against them.
+- [x] Full browser verification against the production build: register → empty balances (no
+      fabricated numbers) → faucet credit → internal transfer → overdraw correctly refused with
+      a real error message → dashboard consistent with wallet. Screenshotted at each step.
+
+
 ## Managed Accounts foundation (design + real risk-disclosure consent flow)
 
 **Date:** 2026-08-13

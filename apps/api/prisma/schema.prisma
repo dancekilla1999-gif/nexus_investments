@@ -466,12 +466,24 @@ model BlockchainTransaction {
 // ─────────────────────────────────────────────────────────────────────────
 
 enum LedgerAccountType {
+  // ── User-facing balance buckets (docs/03-database-architecture.md §2). Never negative. ──
   AVAILABLE
   TRADING
   LOCKED
   FUNDING
   BONUS
   PENDING
+
+  /// The platform boundary — a contra-account representing value that has crossed in or out of
+  /// the system (an on-chain deposit arriving, a withdrawal leaving, a fee being earned).
+  ///
+  /// Double-entry has no concept of value appearing from nowhere: a deposit must debit
+  /// *something* to credit the user. That something is this account, and its balance is
+  /// legitimately negative — it measures the platform's cumulative obligation to its users,
+  /// which is exactly the number custody reconciliation compares against on-chain holdings
+  /// (docs/06-blockchain-architecture.md §5). It is therefore the one account type exempt from
+  /// the non-negative constraint, and it is never owned by, or visible to, a user.
+  EXTERNAL
 }
 
 model LedgerAccount {
@@ -492,13 +504,13 @@ model LedgerAccount {
   createdAt DateTime          @default(now())
 
   entries   LedgerEntry[]
+  balance   Balance?
 
-  // NOTE: Postgres treats NULL as distinct in a unique index, so this constraint alone does
-  // NOT stop two personal (managedAccountId = null) ledger accounts of the same
-  // (userId, assetId, type) from being created. When the Ledger service (MVP2) lands, add a
-  // partial unique index via raw migration SQL — `CREATE UNIQUE INDEX ... WHERE
-  // managed_account_id IS NULL` — Prisma's schema DSL doesn't support partial indexes
-  // declaratively. Documented gap, not a silent one.
+  // Postgres treats NULLs as distinct in a unique index, so this constraint alone does NOT
+  // stop two personal (managedAccountId = null) ledger accounts of the same
+  // (userId, assetId, type) from existing. The gap is closed by a partial unique index
+  // (`ledger_accounts_personal_unique`) in migration 20260814091830_ledger_integrity_constraints
+  // — partial indexes are not expressible in Prisma's schema DSL, so it lives in raw SQL.
   @@unique([userId, managedAccountId, assetId, type])
   @@map("ledger_accounts")
 }
@@ -547,18 +559,28 @@ model LedgerEntry {
   @@map("ledger_entries")
 }
 
-/// Materialized projection of LedgerEntry sums, rebuildable from scratch at any time.
+/// Materialized projection of LedgerEntry sums, rebuildable from scratch at any time
+/// (LedgerService.recomputeBalance / verifyReconciliation).
+///
+/// Keyed 1:1 to a LedgerAccount rather than to (userId, assetId, type): a balance is by
+/// definition "the sum of one ledger account's entries", so tying it to anything else invites
+/// the projection and the account it describes drifting apart — and would need its own
+/// managedAccountId column kept manually in sync with the account's
+/// (docs/10-managed-accounts-architecture.md §5). userId/assetId/type are denormalized copies
+/// purely so "all balances for this user" is one indexed read with no join.
 model Balance {
-  id        String            @id @default(cuid())
-  userId    String
-  user      User              @relation(fields: [userId], references: [id])
-  assetId   String
-  asset     Asset             @relation(fields: [assetId], references: [id])
-  type      LedgerAccountType
-  amount    Decimal           @db.Decimal(36, 18) @default(0)
-  updatedAt DateTime          @updatedAt
+  id              String            @id @default(cuid())
+  ledgerAccountId String            @unique
+  ledgerAccount   LedgerAccount     @relation(fields: [ledgerAccountId], references: [id])
+  userId          String
+  user            User              @relation(fields: [userId], references: [id])
+  assetId         String
+  asset           Asset             @relation(fields: [assetId], references: [id])
+  type            LedgerAccountType
+  amount          Decimal           @db.Decimal(36, 18) @default(0)
+  updatedAt       DateTime          @updatedAt
 
-  @@unique([userId, assetId, type])
+  @@index([userId])
   @@map("balances")
 }
 

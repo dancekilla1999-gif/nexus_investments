@@ -59,24 +59,49 @@ with real auth/profile data and honest empty states for everything not yet built
 
 ---
 
-## MVP2 — Wallet + Ledger + Deposit — ⏳ designed
+## MVP2 — Wallet + Ledger + Deposit — 🚧 in progress (ledger + wallet done, chain deposits remain)
 
-**Scope:** `blockchain` module chain adapters (start with 1 EVM chain via viem +
-Bitcoin testnet), `wallet` deposit-address issuance, `ledger` double-entry engine, deposit
-detection/crediting end-to-end **in testnet/sandbox mode only**.
+**Scope:** `blockchain` module chain adapters, `wallet` deposit-address issuance, `ledger`
+double-entry engine, deposit detection/crediting end-to-end **in testnet/sandbox mode only**.
 
-**Acceptance criteria:**
-- Deposit address generation is deterministic and re-derivable from the same seed (recovery
-  drill documented and tested).
-- A ledger transaction is exactly balanced (sum of entries = 0) — enforced by a DB check
-  constraint, not just application code, and covered by a property-style test that tries to
-  violate it.
-- Duplicate chain events (same tx hash/log index replayed) do not double-credit — test
-  simulates a webhook replay and a queue-job retry.
-- Balance projection (`balances`) matches a from-scratch recomputation from `ledger_entries`
-  in a reconciliation test.
-- UI clearly labeled "Testnet — no real funds" until a signed compliance attestation exists
-  (`02-system-architecture.md §4`).
+**Done:**
+- [x] **Double-entry ledger** (`apps/api/src/ledger`). Every value movement in the platform
+      posts through one service; there is no method anywhere that sets a balance directly.
+- [x] **Conservation enforced by the database, not just the application.** A deferred
+      constraint trigger rejects any transaction whose entries do not sum to zero per asset,
+      verified by a test that bypasses the service layer entirely and writes raw SQL.
+- [x] **Append-only financial history**: `ledger_entries`, `ledger_transactions`, `audit_logs`
+      and `risk_disclosure_acceptances` reject UPDATE and DELETE by trigger. Corrections are
+      compensating entries, never edits.
+- [x] **No double-spend under concurrency.** Ten parallel attempts to spend the same balance
+      leave exactly one succeeding, proven against a real PostgreSQL with row-level locking
+      (not a mock).
+- [x] **Idempotency**, including two callers racing the same key concurrently.
+- [x] **Reconciliation**: the balance projection is checked against a from-scratch recomputation
+      of the entries, and drift is detected and logged.
+- [x] **18-decimal precision** end to end, with a formatter that never emits exponential
+      notation into a user's wallet.
+- [x] Wallet API: balances, internal transfers between the user's own buckets, asset listing —
+      with platform-managed buckets (LOCKED/PENDING) rejected as transfer endpoints server-side.
+- [x] A real Wallet page and live dashboard balances, plus a clearly-labeled sandbox testnet
+      faucet that posts through the exact deposit accounting path a real deposit will use.
+- [x] 87 automated tests passing (46 unit, 41 e2e against live PostgreSQL + Redis).
+
+**Remaining for this milestone:**
+- [ ] `BlockchainAdapter` implementations and chain watchers (start with one EVM testnet).
+- [ ] Deposit address derivation and issuance per (chain, asset).
+- [ ] Deposit detection → PENDING credit on first sight → AVAILABLE on required confirmations,
+      keyed by `(chainId, txHash, logIndex)` for idempotency.
+- [ ] Scheduled custody reconciliation comparing the EXTERNAL boundary balance against
+      on-chain holdings, raising a `RECONCILIATION_MISMATCH` risk event on drift.
+
+**Design decisions made during implementation** (both found by writing the tests, see
+`CHANGELOG.md`):
+- A `LedgerAccountType.EXTERNAL` platform-boundary contra-account was added: double-entry has
+  no way to originate value without one, so a deposit was structurally impossible to record.
+- `SET CONSTRAINTS ALL IMMEDIATE` is issued at the end of every ledger transaction, because
+  Prisma swallows errors raised during its own COMMIT — without it a violated constraint
+  correctly rolled the write back but reported success to the caller.
 
 ## MVP3 — Withdrawal + Security — ⏳ designed
 

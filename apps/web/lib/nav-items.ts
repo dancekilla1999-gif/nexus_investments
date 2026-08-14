@@ -25,7 +25,7 @@ export interface NavItem {
 
 export const primaryNavItems: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, milestone: null },
-  { label: 'Wallet', href: '/wallet', icon: Wallet, milestone: 'MVP2' },
+  { label: 'Wallet', href: '/wallet', icon: Wallet, milestone: null },
   { label: 'Trading Terminal', href: '/trading', icon: LineChart, milestone: 'MVP4' },
   { label: 'P2P', href: '/p2p', icon: Users, milestone: 'MVP5' },
   { label: 'Markets', href: '/markets', icon: TrendingUp, milestone: 'MVP4' },

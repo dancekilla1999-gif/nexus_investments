@@ -8,6 +8,7 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { REDIS_CLIENT } from '../src/redis/redis.constants';
+import { resetDatabase } from './utils/reset-database';
 
 /**
  * Exercises the full MVP1 auth flow through the real HTTP pipeline (guards, pipes, filters,
@@ -227,17 +228,3 @@ describe('Auth + Users (e2e)', () => {
   });
 });
 
-async function resetDatabase(prisma: PrismaService) {
-  await prisma.$transaction([
-    prisma.auditLog.deleteMany(),
-    prisma.backupCode.deleteMany(),
-    prisma.refreshSession.deleteMany(),
-    prisma.device.deleteMany(),
-    prisma.notification.deleteMany(),
-    prisma.referral.deleteMany(),
-    prisma.apiKey.deleteMany(),
-    prisma.riskDisclosureAcceptance.deleteMany(),
-    prisma.profile.deleteMany(),
-    prisma.user.deleteMany(),
-  ]);
-}

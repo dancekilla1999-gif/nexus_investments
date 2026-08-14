@@ -3,12 +3,31 @@
  * Never seeds fake user/financial data outside `development`
  * (docs/03-database-architecture.md §7).
  */
-import { PrismaClient, ChainType, SubscriptionTier } from '@prisma/client';
+import { PrismaClient, ChainType, SubscriptionTier, UserStatus } from '@prisma/client';
+import {
+  PLATFORM_SYSTEM_USER_EMAIL,
+  PLATFORM_SYSTEM_USER_ID,
+} from '../src/ledger/ledger.constants';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('Seeding reference data (chains, assets, subscription plans)...');
+
+  // The owner of the platform's EXTERNAL boundary ledger accounts — see
+  // src/ledger/ledger.constants.ts. Cannot authenticate: the password hash is not a valid
+  // argon2 encoding, so verification always fails rather than matching some crafted input, and
+  // the account is permanently CLOSED.
+  await prisma.user.upsert({
+    where: { id: PLATFORM_SYSTEM_USER_ID },
+    update: {},
+    create: {
+      id: PLATFORM_SYSTEM_USER_ID,
+      email: PLATFORM_SYSTEM_USER_EMAIL,
+      passwordHash: 'NOT_A_VALID_HASH__SYSTEM_ACCOUNT_CANNOT_LOG_IN',
+      status: UserStatus.CLOSED,
+    },
+  });
 
   const chains = [
     { key: 'ethereum', name: 'Ethereum (Sepolia testnet)', type: ChainType.EVM, nativeAssetSymbol: 'ETH', confirmationsRequired: 12 },

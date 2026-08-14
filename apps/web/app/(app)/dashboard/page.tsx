@@ -5,12 +5,27 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { ComingSoonWidget } from '@/components/finance/coming-soon-widget';
 import { StatCardSkeleton } from '@/components/ui/skeleton';
+import { Amount } from '@/components/finance/amount';
 import { api } from '@/lib/api-client';
 import { useAuthStore } from '@/lib/auth-store';
+import { LedgerBucket } from '@/lib/types';
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const { data: me, isLoading } = useQuery({ queryKey: ['me'], queryFn: api.getMe });
+  const { data: balances, isLoading: balancesLoading } = useQuery({
+    queryKey: ['wallet-balances'],
+    queryFn: api.getWalletBalances,
+  });
+
+  /**
+   * Sums one bucket per asset. Deliberately NOT a single cross-asset total: adding 1 BTC to
+   * 100 USDT requires prices, and the market data that would make that number honest arrives
+   * in MVP4. Showing per-asset holdings is accurate today; a fabricated fiat total would not be.
+   */
+  function bucketRows(type: LedgerBucket) {
+    return (balances ?? []).filter((b) => b.type === type && b.amount !== '0');
+  }
 
   const displayName = me?.profile?.firstName ?? user?.email?.split('@')[0];
 
@@ -30,22 +45,25 @@ export default function DashboardPage() {
 
       {/* Top summary row — Total Portfolio / 24H P&L / Available / Trading */}
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {isLoading
-          ? Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)
-          : [
-              ['Total Portfolio', 'MVP2'],
-              ['24H P&L', 'MVP4'],
-              ['Available Balance', 'MVP2'],
-              ['Trading Balance', 'MVP2'],
-            ].map(([label, milestone]) => (
-              <Card key={label}>
-                <div className="text-xs text-ink-muted">{label}</div>
-                <div className="mt-2 font-mono text-2xl text-ink-muted">—</div>
-                <Badge tone="neutral" className="mt-2">
-                  {milestone}
-                </Badge>
-              </Card>
-            ))}
+        {isLoading || balancesLoading ? (
+          Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)
+        ) : (
+          <>
+            <BalanceStat label="Available Balance" rows={bucketRows('AVAILABLE')} />
+            <BalanceStat label="Trading Balance" rows={bucketRows('TRADING')} />
+            <BalanceStat label="Locked" rows={bucketRows('LOCKED')} />
+            <Card>
+              <div className="text-xs text-ink-muted">Total Portfolio Value</div>
+              <div className="mt-2 font-mono text-2xl text-ink-muted">—</div>
+              <Badge tone="neutral" className="mt-2">
+                MVP4
+              </Badge>
+              <p className="mt-2 text-xs text-ink-muted/70">
+                Needs market prices to convert holdings to one figure.
+              </p>
+            </Card>
+          </>
+        )}
       </section>
 
       <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -102,5 +120,30 @@ export default function DashboardPage() {
         />
       </section>
     </div>
+  );
+}
+
+function BalanceStat({
+  label,
+  rows,
+}: {
+  label: string;
+  rows: Array<{ assetId: string; assetSymbol: string; amount: string }>;
+}) {
+  return (
+    <Card>
+      <div className="text-xs text-ink-muted">{label}</div>
+      {rows.length === 0 ? (
+        <div className="mt-2 font-mono text-2xl text-ink-muted">0</div>
+      ) : (
+        <div className="mt-2 space-y-1">
+          {rows.map((row) => (
+            <div key={row.assetId} className="text-xl">
+              <Amount value={row.amount} symbol={row.assetSymbol} emphasizeDigits={6} />
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
