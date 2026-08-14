@@ -1,5 +1,67 @@
 # Changelog
 
+## MVP14 — Allocation Engine
+
+**Date:** 2026-08-14
+
+Three jobs — derived exposure, flow netting, wind-down — resting on one function that has to be
+exactly right.
+
+### The parts must sum to the whole
+
+`total × wᵢ / Σw`, rounded per holder, does not add up. Floor every share and the parts fall
+short of the total; round to nearest and they can overshoot. Either way `Σ parts ≠ total`, and in
+a fund that is not cosmetic: it is value shown to nobody, or the same value shown to two people.
+Because exposure is **derived on every read** rather than stored, the discrepancy would be
+permanent, not a transient glitch.
+
+`apportion` uses largest-remainder (Hamilton) apportionment: floor every share, then hand the
+shortfall out one unit-in-the-last-place at a time to whoever was rounded down hardest. Ties break
+on a stable key, so the same inputs always produce the same output — a report that disagrees with
+itself between runs is worse than one that is slightly off.
+
+Verified at the MVP14 acceptance bar: **10,000 investors, deliberately uneven weights so nearly
+every share is a repeating decimal, summing exactly to the pool**, in ~3.6 seconds. Fast enough
+that exposure can stay derived rather than stored.
+
+### The bug in the verification helper
+
+`sumApportioned` is exported precisely so callers can assert exactness at the call site. It
+accumulated in a default `Prisma.Decimal`, which keeps 20 significant digits — so any total above
+roughly 100 lost its tail, and the helper reported a **correct** apportionment as wrong.
+
+That is the third time this session that Decimal.js's default precision has silently truncated an
+intermediate. It is now a named rule in `CLAUDE.md`: money arithmetic that accumulates or
+multiplies before dividing needs an explicit high-precision constructor, not the default.
+
+### Flow netting
+
+Tells the manager what the next dealing point will do to pool cash **before** it happens.
+Discovering a shortfall during settlement means queueing a redemption an investor was already
+told to expect; discovering it beforehand means there is still time to raise cash. Redemptions
+are valued at the currently-implied price and labelled as an estimate — the real figure is fixed
+at the dealing point, and pretending otherwise would quote a price the platform cannot honour.
+
+### Wind-down
+
+Distributes a closing strategy's proceeds strictly pro rata and closes it. The endpoint accepts
+**no amount and no recipient** — there is deliberately nothing in the request for an operator to
+choose, which is the control. A test posts `{amount: 999999, recipient: <someone>}` and confirms
+the body is ignored entirely.
+
+Refused unless the strategy is `WINDING_DOWN` *and* every non-base position has been liquidated:
+distributing cash while the pool still holds WBTC would hand investors part of what they own and
+quietly keep the rest. Admin-only — an investment manager can run a fund but cannot close one.
+
+### Verification
+
+20 unit tests on the apportionment maths (exactness under repeating decimals, wildly unequal
+weights, 10,000 holders, coarse scales, and every degenerate input), 17 e2e tests on the service.
+279 total (119 unit/integration including live Sepolia, 160 e2e against live PostgreSQL and
+Redis).
+
+---
+
 ## MVP13 — Master Strategy Account: dealing points, subscription and redemption
 
 **Date:** 2026-08-14

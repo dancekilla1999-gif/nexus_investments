@@ -95,24 +95,30 @@ Violating any of these is a defect regardless of what a ticket says.
    deterministic lock order. Never read a balance, decide, then write.
 9. **Never use ORM `{ increment }` on a Decimal column** — it does not preserve precision. Read
    under lock, compute in Decimal, write.
+10. **Decimal.js keeps 20 significant digits by default, and that has caused three separate bugs
+    here.** Any money arithmetic that accumulates over many terms, or multiplies before dividing,
+    must use an explicit high-precision constructor (`Prisma.Decimal.clone({ precision: 60 })`).
+    The default silently truncates an intermediate and the result looks plausible.
+11. **A split must sum to the whole.** Use `apportion` (largest-remainder), never per-share
+    rounding — parts that do not add up mean value shown to nobody or to two people at once.
 
 ### Keys and secrets
 
-10. **No private key or seed phrase in the database in a form the server can decrypt.** Ever,
+12. **No private key or seed phrase in the database in a form the server can decrypt.** Ever,
     under any configuration.
-11. **No secret in a log line.** The security logger has an explicit deny-list.
-12. **Signing lives behind `SigningProvider`** (HSM/MPC in production). The API process holds no
+13. **No secret in a log line.** The security logger has an explicit deny-list.
+14. **Signing lives behind `SigningProvider`** (HSM/MPC in production). The API process holds no
     signing capability of its own.
 
 ### Honesty
 
-13. **Never fabricate data.** A missing value renders as "not available", never as zero. A chart
+15. **Never fabricate data.** A missing value renders as "not available", never as zero. A chart
     of zeros is a fabricated track record.
-14. **Never claim a guaranteed outcome.** Enforced by the forbidden-claims gate, in English and
+16. **Never claim a guaranteed outcome.** Enforced by the forbidden-claims gate, in English and
     Russian, over all user-facing copy.
-15. **If a feature cannot work safely with real money yet, label it sandbox/testnet** and make
+17. **If a feature cannot work safely with real money yet, label it sandbox/testnet** and make
     the API refuse it in live mode. Do not create the appearance of a real financial operation.
-16. **Append-only history.** Ledger entries, audit logs, NAV snapshots, fee accruals and consent
+18. **Append-only history.** Ledger entries, audit logs, NAV snapshots, fee accruals and consent
     records reject UPDATE and DELETE by trigger. Corrections are new rows.
 
 ---

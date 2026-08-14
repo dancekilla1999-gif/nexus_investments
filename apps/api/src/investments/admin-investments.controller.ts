@@ -7,6 +7,7 @@ import { JwtPayload } from '../common/types/authenticated-request';
 import { CreateStrategyDto } from './dto/create-strategy.dto';
 import { StrikeDealingPointDto } from './dto/subscribe.dto';
 import { DealingService } from './dealing.service';
+import { AllocationService } from './allocation.service';
 import { SetStrategyStatusDto } from './dto/set-status.dto';
 import { UpdateStrategyDto } from './dto/update-strategy.dto';
 import { InvestmentStrategiesService } from './investment-strategies.service';
@@ -26,6 +27,7 @@ export class AdminInvestmentsController {
   constructor(
     private readonly strategies: InvestmentStrategiesService,
     private readonly dealing: DealingService,
+    private readonly allocation: AllocationService,
   ) {}
 
   @Get()
@@ -65,6 +67,28 @@ export class AdminInvestmentsController {
     @Body() dto: StrikeDealingPointDto,
   ) {
     return this.dealing.strikeDealingPoint(id, dto.markSource, user.sub);
+  }
+
+  /**
+   * What the next dealing point will do to the pool's cash. The manager needs this *before*
+   * settlement — discovering a shortfall during it means queueing a redemption an investor was
+   * told to expect.
+   */
+  @Get(':id/flows')
+  @ApiOperation({ summary: 'Subscriptions in, redemptions out, and any cash shortfall' })
+  flows(@Param('id') id: string) {
+    return this.allocation.netFlows(id);
+  }
+
+  /**
+   * Close the strategy and return everything pro rata. Takes no amount and no recipient: there
+   * is deliberately nothing here for an operator to decide.
+   */
+  @Post(':id/wind-down')
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
+  @ApiOperation({ summary: 'Distribute a WINDING_DOWN strategy pro rata and close it' })
+  windDown(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.allocation.windDown(id, user.sub);
   }
 
   @Patch(':id/status')

@@ -334,11 +334,36 @@ than being paid from platform funds.
   column. `totalUnits` is now computed in Decimal and written under a `FOR UPDATE` lock, which
   also closes the lost-update race that a read-modify-write on a shared counter always has.
 
-### MVP14 — Allocation Engine — ⏳ next
+### MVP14 — Allocation Engine — ✅ done
 Derived per-investor exposure, dealing-point flow netting, pro-rata wind-down.
-*Acceptance:* Σ derived exposures equals pool exposure exactly, at 10,000 positions.
 
-### MVP15 — NAV Engine
+*Acceptance — met.* Σ derived exposures equals pool exposure **exactly** at 10,000 positions
+with deliberately uneven weights (so nearly every share is a repeating decimal), computed in
+~3.6s — fast enough to stay a derived-on-read projection rather than a stored one that could
+drift.
+
+The engineering here is one function, `apportion`: the naive `total × wᵢ / Σw` does not add up.
+Floor every share and the parts fall short; round to nearest and they can overshoot. Either way
+`Σ parts ≠ total`, which in a fund means value shown to nobody or the same value shown to two
+people — and since exposure is recomputed on every read, the discrepancy is permanent rather
+than transient. Largest-remainder (Hamilton) apportionment fixes it: floor, then hand the
+shortfall out one ulp at a time to whoever was rounded down hardest, ties broken on a stable key
+so two runs of the same report never disagree.
+
+Also: flow netting tells the manager what the next dealing point will do to pool cash **before**
+it happens (finding a shortfall during settlement means queueing a redemption an investor was
+told to expect), and wind-down distributes pro rata with an endpoint that accepts no amount and
+no recipient — a test posts `{amount: 999999, recipient: …}` and confirms the body is ignored.
+Wind-down is refused while positions are unliquidated, and is admin-only: an investment manager
+cannot close a fund.
+
+*Bug found while building it:* `sumApportioned` — the helper exported so callers can **assert**
+exactness — accumulated in a default `Prisma.Decimal`, which keeps 20 significant digits and
+silently dropped the tail of any total above ~100. The verification helper was itself the lossy
+step, and it made a correct apportionment read as wrong. Intermediates now use a
+high-precision Decimal clone.
+
+### MVP15 — NAV Engine — ⏳ next
 Scheduled and event-driven revaluation, immutable `NavSnapshot`, sourced marks with provenance.
 *Acceptance:* no code path writes `navPerUnit` outside the engine; a manager-supplied price is
 rejected.
