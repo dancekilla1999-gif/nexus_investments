@@ -1,5 +1,91 @@
 # Changelog
 
+## MVP11 — Investment accounting and the ownership boundary
+
+**Date:** 2026-08-14
+
+The first slice of the Investment Management addendum (`docs/12`). Deliberately not the
+manager terminal, not the marketplace, not a single screen: the accounting that makes it
+possible to say who owns what, and the constraint that stops anyone taking it. Building the
+terminal first would mean trading money the books cannot yet correctly attribute.
+
+### Ownership is a property of the account
+
+Four new ledger account types — `PENDING_SUBSCRIPTION` (committed to a strategy but still the
+user's, returned in full if cancelled before the dealing point), `STRATEGY_POOL` (owned by that
+strategy's investors collectively, pro rata by units), `PLATFORM_TREASURY` and
+`PLATFORM_REVENUE`. Plus the models the unit accounting needs: `InvestmentStrategy`,
+`InvestmentPosition`, `NavSnapshot`, `SubscriptionRequest`, `FeeAccrual`.
+
+`navPerUnit` is deliberately **not** a column on the strategy. It lives on the immutable NAV
+snapshot, so there is no field for anyone to hand-edit.
+
+### The boundary, in the database
+
+> A ledger transaction may not place a user-owned or pool-owned account on one side and a
+> platform-owned account on the other, unless its type is one of a short, named list whose
+> amounts come from the fee engine or a venue report.
+
+A deferred constraint trigger, not a service check — application code can be changed by anyone
+who can merge a commit, while a migration is a visible, reviewable artefact that keeps holding
+if the application layer is compromised or bypassed. Permitted: `FEE_CRYSTALLISATION`,
+`TRADING_FEE`, `FEE`, `REFERRAL_COMMISSION`. Everything else, `ADJUSTMENT` and `TRADE`
+included, is refused.
+
+`TRADE` is barred on purpose. A fill is pool-internal — cash out, asset in — and the venue fee
+is its own `TRADING_FEE` posting, atomic with the fill because both are written in one database
+transaction. Had `TRADE` been allowed to touch a platform account, "a trade" would have been a
+general-purpose way to move any amount of investor money to the platform.
+
+### The 50/50 profit share
+
+The operator's fee model is a pure profit share: `perfFeeBps = 5000`, `mgmtFeeBps = 0` — no
+profit, no fee. Both stay per-strategy configuration, with a CHECK ceiling of 5000 so a typo
+cannot turn a 50% share into a 500% one. Three consequences are recorded in `docs/12` §6.0, two
+of which are code rather than commentary: net-of-fee return becomes the headline figure
+everywhere performance is shown (a +20% gross strategy delivers +10%, and burying that in the
+fine print is the kind of claim §3.1 forbids), and the hard 10% drawdown cap stops being a
+prudent default and becomes load-bearing — at a 50% share the manager takes half the upside and
+none of the downside, which rewards volatility, and the cap is the structural counterweight.
+
+### What else the database now refuses
+
+- `hwmUnitPrice` cannot decrease. Lowering a high water mark is indistinguishable from charging
+  for the same performance twice — and at 50%, it takes half of a gain already paid for.
+- NAV snapshots cannot be updated or deleted. A correction is a new snapshot.
+- A fee accrual's rate, base, high water mark and amount are frozen at insert; only the
+  crystallisation stamp may change, and only once. An investor can always reconstruct the
+  arithmetic behind a charge.
+- `maxDrawdownBps > 1000` and `perfFeeBps > 5000` rejected outright.
+- A `STRATEGY_POOL` account cannot exist without a strategy; a user bucket cannot carry one; a
+  strategy cannot have two pool accounts for the same asset (two rows would let reconciliation
+  read one and miss the other).
+
+### Verification, and a bug it caught
+
+25 new e2e tests, every one writing **raw SQL with no service in the path** — the claim under
+test is "the database refuses", so routing through the service layer would have tested the
+wrong thing. The same pool→platform movement is attempted under eight transaction types and
+refused each time, including when the platform leg is a 1-unit sliver hidden among legitimate
+legs, then accepted under the fee types.
+
+Those tests found a real bug in MVP2's work: `ledger_accounts_personal_unique` treated every
+`managedAccountId IS NULL` row as somebody's personal balance. Pool accounts are held under the
+platform system user, so the index **capped the platform at one strategy per asset** — the
+second strategy to hold USDC was rejected outright. Narrowed in migration
+`20260814200200_scope_personal_account_uniqueness`.
+
+Totals: 157 automated tests (64 unit/integration including live Sepolia, 93 e2e against live
+PostgreSQL and Redis).
+
+### Not built yet
+
+Everything that spends this foundation: subscription and redemption services, dealing points,
+the NAV engine, fee accrual and crystallisation, the marketplace, the manager terminal. MVP12
+onward in `docs/09-roadmap.md`.
+
+---
+
 ## MVP2 (part 2) — On-chain deposits and custody reconciliation
 
 **Date:** 2026-08-14

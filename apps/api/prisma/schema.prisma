@@ -95,6 +95,10 @@ model User {
   riskDisclosureAcceptances RiskDisclosureAcceptance[]
   managedAccounts           ManagedAccount[]
 
+  // Investment management (docs/12) — Mode B
+  investmentPositions  InvestmentPosition[]
+  subscriptionRequests SubscriptionRequest[]
+
   @@index([email])
   @@map("users")
 }
@@ -389,6 +393,7 @@ model Asset {
   marketsAsBase           Market[] @relation("MarketBaseAsset")
   marketsAsQuote          Market[] @relation("MarketQuoteAsset")
   p2pAds                  P2PAd[]
+  investmentStrategies    InvestmentStrategy[]
 
   @@unique([chainId, symbol])
   @@map("assets")
@@ -510,6 +515,28 @@ enum LedgerAccountType {
   /// (WalletService.faucet) — so a non-zero SANDBOX_MINT balance in production is itself a
   /// finding.
   SANDBOX_MINT
+
+  // ── Investment management ownership domains (docs/12 §1) ──────────────
+  // Ownership is a property of the ACCOUNT, not of a comment on a transaction. That is what
+  // lets the ledger answer "whose money is this?" at any instant.
+
+  /// Investor capital committed to a strategy but not yet at a dealing point. Still the
+  /// USER'S money: a subscription cancelled before the dealing point is returned in full
+  /// (docs/12 §2.2). Held under the investor's own userId, like any other user bucket.
+  PENDING_SUBSCRIPTION
+
+  /// Assets of a strategy pool — cash and positions — owned by that strategy's investors
+  /// collectively, pro rata by units. NOT platform money, and structurally unreachable by any
+  /// operator: see the boundary trigger.
+  STRATEGY_POOL
+
+  /// The platform's own operating capital. The only balances the platform may actually spend,
+  /// alongside PLATFORM_REVENUE.
+  PLATFORM_TREASURY
+
+  /// Fees the platform has earned and settled. Value arrives here only via
+  /// FEE_CRYSTALLISATION or a TRADE's venue/execution fee leg.
+  PLATFORM_REVENUE
 }
 
 model LedgerAccount {
@@ -526,6 +553,13 @@ model LedgerAccount {
   /// entirely, moved between only via an explicit TRANSFER_INTERNAL ledger transaction.
   managedAccountId String?
   managedAccount   ManagedAccount? @relation(fields: [managedAccountId], references: [id])
+
+  /// Set on STRATEGY_POOL accounts — the pool this asset balance belongs to. Pool accounts are
+  /// owned by the strategy's investors collectively, so their `userId` is the platform system
+  /// user purely to satisfy the relation; ownership is carried by `type` + `strategyId`, and
+  /// the boundary trigger keys off `type`, never off `userId`.
+  strategyId String?
+  strategy   InvestmentStrategy? @relation(fields: [strategyId], references: [id])
 
   createdAt DateTime          @default(now())
 
@@ -551,6 +585,21 @@ enum LedgerTransactionType {
   FEE
   REFERRAL_COMMISSION
   ADJUSTMENT
+
+  // ── Investment management (docs/12, docs/14) ──
+  /// Investor's committed capital leaving PENDING_SUBSCRIPTION and entering the pool, against
+  /// units issued at the dealing-point NAV.
+  SUBSCRIPTION_SETTLEMENT
+  /// Units cancelled at the dealing-point NAV; proceeds returned to the investor's own wallet.
+  REDEMPTION_SETTLEMENT
+  /// Accrued management/performance fee actually paid: pool → platform revenue.
+  FEE_CRYSTALLISATION
+  /// A venue/execution fee on a fill. Deliberately a separate type from TRADE: if TRADE itself
+  /// were allowed to touch a platform account, "a trade" would be a general-purpose way to move
+  /// investor money to the platform for any amount. TRADE stays pool-internal (cash ↔ asset);
+  /// the fee is its own typed, boundary-crossing posting, atomic with the fill because both are
+  /// written in one database transaction.
+  TRADING_FEE
 }
 
 model LedgerTransaction {
@@ -1232,6 +1281,7 @@ model TradingStrategy {
 
   managedAccounts ManagedAccount[]
   backtestRuns    BacktestRun[]
+  investmentStrategies InvestmentStrategy[]
 
   @@unique([name, version])
   @@map("trading_strategies")
@@ -1277,4 +1327,233 @@ model BacktestResult {
   createdAt      DateTime    @default(now())
 
   @@map("backtest_results")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Investment Management (MVP11+) — docs/12-investment-management-architecture.md
+//
+// Mode B of the platform: an investor contributes capital to a strategy pool and receives
+// UNITS. The pool's assets are owned by its investors collectively, pro rata by units; the
+// platform owns none of it and — enforced by a database trigger, not only by service code —
+// has no path to it outside the named fee/settlement transaction types.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum StrategyCustodyModel {
+  /// Pooled fund with NAV-per-unit accounting. The only implemented model (docs/12 §0.2).
+  POOLED_NAV
+  /// Segregated per-investor sub-accounts mirroring the manager's trades — the model docs/10
+  /// originally chose, kept as a declared variant for jurisdictions that forbid pooling.
+  /// NOT IMPLEMENTED: the service layer refuses to create one rather than pretending it works.
+  SEGREGATED_COPY
+}
+
+enum StrategyStatus {
+  DRAFT
+  /// A passing BacktestResult exists. Still cannot take capital.
+  BACKTESTED
+  /// Open for subscription.
+  OPEN
+  /// Existing investors kept, no new subscriptions.
+  SOFT_CLOSED
+  PAUSED
+  WINDING_DOWN
+  CLOSED
+}
+
+enum DealingFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+/// An investment product. Every economic term is configuration — nothing about fees, limits or
+/// lock-ups is hardcoded anywhere in the application or the frontend.
+model InvestmentStrategy {
+  id          String               @id @default(cuid())
+  slug        String               @unique
+  name        String
+  description String
+  thesis      String?
+  custodyModel StrategyCustodyModel @default(POOLED_NAV)
+  status      StrategyStatus       @default(DRAFT)
+
+  /// The asset NAV is denominated in.
+  baseAssetId String
+  baseAsset   Asset                @relation(fields: [baseAssetId], references: [id])
+
+  /// Set once the strategy is validated; a strategy cannot reach OPEN without one (docs/11).
+  tradingStrategyId String?
+  tradingStrategy   TradingStrategy? @relation(fields: [tradingStrategyId], references: [id])
+
+  minimumInvestment  Decimal   @db.Decimal(36, 18)
+  maximumInvestment  Decimal?  @db.Decimal(36, 18)
+  lockupDays         Int       @default(0)
+  redemptionNoticeDays Int     @default(0)
+  dealingFrequency   DealingFrequency @default(DAILY)
+
+  /// Pure profit share by default — 50% of gain above the investor's high water mark, and
+  /// nothing at all when there is no profit (docs/12 §6.0). Both are per-strategy config;
+  /// perfFeeBps carries a platform ceiling of 5000 enforced by a CHECK constraint, so a typo
+  /// cannot turn a 50% share into a 500% one.
+  mgmtFeeBps Int @default(0)
+  perfFeeBps Int @default(5000)
+
+  /// Hard platform ceiling of 1000 (10%) — docs/10 §4, and load-bearing under a 50% profit
+  /// share because the manager takes half the upside and none of the downside (docs/12 §6.0).
+  maxDrawdownBps      Int @default(1000)
+  maxAssetExposureBps Int @default(10000)
+  maxLeverageBps      Int @default(10000)
+  dailyLossLimitBps   Int?
+
+  benchmarkSymbol String?
+
+  /// Unit register. navPerUnit is derived (poolNAV / totalUnits) and lives on NavSnapshot —
+  /// it is deliberately NOT a column here, so there is no field for anyone to hand-edit.
+  totalUnits Decimal @db.Decimal(36, 18) @default(0)
+
+  createdAt DateTime @default(now())
+  openedAt  DateTime?
+  closedAt  DateTime?
+
+  positions InvestmentPosition[]
+  navSnapshots NavSnapshot[]
+  subscriptions SubscriptionRequest[]
+  ledgerAccounts LedgerAccount[]
+
+  @@index([status])
+  @@map("investment_strategies")
+}
+
+/// One per (investor, strategy). The investor's claim on the pool.
+model InvestmentPosition {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id])
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+
+  /// The claim itself. Value = units × navPerUnit.
+  units      Decimal @db.Decimal(36, 18) @default(0)
+  /// Total contributed less capital returned — the denominator for return %.
+  costBasis  Decimal @db.Decimal(36, 18) @default(0)
+
+  /// High water mark as a UNIT PRICE, not a dollar amount — the only form that is correct when
+  /// investors enter at different times (docs/12 §6.1). Ratchets up on crystallisation and
+  /// never decreases; written by the fee engine alone. Lowering it is indistinguishable from
+  /// charging twice for the same performance, so no administrative path to do so exists.
+  hwmUnitPrice Decimal @db.Decimal(36, 18) @default(0)
+
+  /// Accrued but not yet crystallised. Deliberately NOT ledger postings: an accrual moves no
+  /// assets, and posting it would drag every other investor's navPerUnit down for a fee they
+  /// do not owe (docs/12 §1.1).
+  accruedMgmtFee Decimal @db.Decimal(36, 18) @default(0)
+  accruedPerfFee Decimal @db.Decimal(36, 18) @default(0)
+
+  lockedUntil DateTime?
+  createdAt   DateTime  @default(now())
+
+  feeAccruals FeeAccrual[]
+
+  @@unique([userId, strategyId])
+  @@index([strategyId])
+  @@map("investment_positions")
+}
+
+/// Immutable valuation record. `navPerUnit` is written here by the NAV engine and by nothing
+/// else; there is no endpoint that sets NAV (docs/12 §5).
+model NavSnapshot {
+  id         String             @id @default(cuid())
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+
+  struckAt   DateTime @default(now())
+  poolNav    Decimal  @db.Decimal(36, 18)
+  totalUnits Decimal  @db.Decimal(36, 18)
+  navPerUnit Decimal  @db.Decimal(36, 18)
+
+  cashComponent     Decimal @db.Decimal(36, 18) @default(0)
+  positionComponent Decimal @db.Decimal(36, 18) @default(0)
+
+  /// Where the marks came from. A manager cannot supply a price — whoever sets prices authors
+  /// their own performance fee.
+  markSource String
+  /// True when this snapshot is a dealing point: subscriptions and redemptions settle at it.
+  isDealingPoint Boolean @default(false)
+
+  @@unique([strategyId, struckAt])
+  @@index([strategyId, isDealingPoint])
+  @@map("nav_snapshots")
+}
+
+enum SubscriptionRequestStatus {
+  /// Capital committed and held in the investor's PENDING_SUBSCRIPTION bucket.
+  PENDING
+  /// Units issued at a dealing point.
+  SETTLED
+  /// Returned in full to the investor, no fee — the money never left them.
+  CANCELLED
+}
+
+model SubscriptionRequest {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id])
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+
+  amount Decimal @db.Decimal(36, 18)
+  status SubscriptionRequestStatus @default(PENDING)
+
+  /// Set at settlement — the dealing point this subscribed at, and what it bought.
+  settledSnapshotId String?
+  unitsIssued       Decimal? @db.Decimal(36, 18)
+
+  /// The disclosure the investor accepted before committing. Required — a subscription without
+  /// a recorded acceptance of the current risk disclosure cannot be created.
+  acceptanceId String
+
+  idempotencyKey String @unique
+  createdAt   DateTime  @default(now())
+  settledAt   DateTime?
+  cancelledAt DateTime?
+
+  @@index([strategyId, status])
+  @@index([userId])
+  @@map("subscription_requests")
+}
+
+enum FeeAccrualKind {
+  MANAGEMENT
+  PERFORMANCE
+}
+
+/// Append-only record of every fee accrual, so an investor can reconstruct the arithmetic
+/// behind any charge: period, rate, base, high water mark, result. A fee the investor cannot
+/// recompute themselves is a fee they have to take on trust.
+model FeeAccrual {
+  id         String             @id @default(cuid())
+  positionId String
+  position   InvestmentPosition @relation(fields: [positionId], references: [id])
+
+  kind       FeeAccrualKind
+  periodStart DateTime
+  periodEnd   DateTime
+  /// The rate actually applied, copied at accrual time — a later config change must not
+  /// retroactively alter what was charged.
+  rateBps    Int
+  /// What the rate was applied to.
+  baseAmount Decimal @db.Decimal(36, 18)
+  /// For PERFORMANCE: the HWM unit price the gain was measured above.
+  hwmUnitPrice Decimal? @db.Decimal(36, 18)
+  navPerUnit   Decimal? @db.Decimal(36, 18)
+  amount     Decimal @db.Decimal(36, 18)
+
+  /// Set when this accrual is settled by FEE_CRYSTALLISATION.
+  crystallisedAt          DateTime?
+  crystallisedTransactionId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([positionId, kind])
+  @@map("fee_accruals")
 }

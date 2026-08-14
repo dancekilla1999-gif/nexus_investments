@@ -90,7 +90,17 @@ short, named list:
 |---|---|---|
 | `FEE_CRYSTALLISATION` | pool → platform revenue | the accrued fee balance, from the fee engine |
 | `TRADING_FEE` | pool or wallet → platform revenue | the venue-reported or scheduled fee |
-| `REDEMPTION_SETTLEMENT` | pool → **the investor's own wallet** | units × NAV, less accrued fees |
+| `FEE` | wallet → platform revenue | a disclosed platform charge (e.g. a subscription plan) |
+| `REFERRAL_COMMISSION` | platform → user | the platform spending its own money, not taking any |
+
+`REDEMPTION_SETTLEMENT` (pool → the investor's own wallet) is *not* on this list because it is
+not a crossing at all: both sides are investor-owned.
+
+**`TRADE` is deliberately absent.** A fill is pool-internal — cash out, asset in — and the
+venue's fee is posted as its own `TRADING_FEE` transaction, atomic with the fill because both
+are written inside one database transaction. Letting `TRADE` itself touch a platform account
+would have made "a trade" a general-purpose way to move any amount of investor money to the
+platform, which is the exact hole this boundary exists to close.
 
 Nothing else. There is no `ADMIN_TRANSFER`, no `MANUAL_ADJUSTMENT`, and no endpoint that takes
 an amount and a destination from an operator. **A manager directs trades; a manager cannot
@@ -164,7 +174,7 @@ Configuration, all per-strategy, none hardcoded:
 | `baseAsset` | The asset NAV is denominated in (e.g. USDT) |
 | `minimumInvestment`, `maximumInvestment` | Enforced server-side |
 | `lockupDays`, `dealingFrequency`, `redemptionNoticeDays` | **Shown before subscription, never after** |
-| `mgmtFeeBps`, `perfFeeBps`, `perfFeeCrystallisation` | Configurable; see §5, §6 |
+| `mgmtFeeBps`, `perfFeeBps`, `perfFeeCrystallisation` | Configurable. Platform default is a pure 50/50 profit share: `perfFeeBps = 5000`, `mgmtFeeBps = 0`, ceiling `perfFeeBps ≤ 5000` (§6.0) |
 | `benchmarkSymbol` | For relative performance display |
 | `maxDrawdownBps` | **≤ 1000 (10%) — hard platform ceiling, from docs/10 §4** |
 | `maxAssetExposureBps`, `maxLeverageBps`, `dailyLossLimitBps` | Risk Engine inputs |
@@ -229,6 +239,45 @@ manager author their own performance fee.
 ---
 
 ## 6. High Water Mark and Performance Fee
+
+### 6.0 The platform's fee model: 50 / 50 profit share
+
+The operator's chosen model is a **pure profit share — 50% of new profit to the manager, 50% to
+the investor**. In configuration:
+
+```
+perfFeeBps = 5000     50% of gain above the investor's high water mark
+mgmtFeeBps = 0        no charge when there is no profit
+```
+
+Both remain per-strategy configuration, not constants — but these are the defaults a new
+strategy is created with, and `perfFeeBps` carries a **platform ceiling of 5000** so a typo
+cannot turn a 50% share into a 500% one.
+
+Three consequences follow from 50%, and two of them are code, not commentary:
+
+1. **Net return becomes the headline number.** A strategy that returns +20% gross delivers +10%
+   to the investor. Showing the gross figure as the marketplace headline with the fee in the
+   fine print would be misleading in exactly the way §3.1 forbids. So: the marketplace, the
+   investor dashboard and every performance chart display **net-of-fee return as the primary
+   figure**, with gross available beside it and clearly labelled. This is enforced in the
+   reporting layer, not left to whoever writes the page.
+
+2. **HWM stops being a nicety and becomes the core protection.** At a 50% share, charging on
+   recovered losses would take half of a gain the investor has already paid for once. The
+   per-investor HWM in §6.1 is what prevents it, and it is why the HWM is written by the fee
+   engine alone with no administrative path to lower it.
+
+3. **The payoff is asymmetric — the manager takes half the upside and none of the downside.**
+   That is a genuine incentive toward volatility: a strategy that swings wildly pays the manager
+   better than a steady one with the same average return, because losses are the investor's
+   alone. This is stated here rather than left implicit because the **hard 10% drawdown cap is
+   the structural counterweight to it**, which moves that cap from "prudent default" to
+   "load-bearing". It must not be relaxed while this fee model is in force, and the investor
+   must be shown both numbers together — the 50% share and the 10% cap — at the point of
+   deciding, since they only make sense as a pair.
+
+### 6.1 Mechanism
 
 HWM is stored **per investor position, as a unit price**, not as a dollar amount. This is what
 makes it correct when investors enter at different times:

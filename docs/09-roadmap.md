@@ -248,14 +248,30 @@ drawdown ceiling**, and the **backtest-before-live gate** from `docs/11`.
 trade investor capital. Building the terminal first would mean trading money the books cannot
 yet correctly attribute.
 
-### MVP11 — Investment Accounts
-Accounting entities (`USER_WALLET` / `STRATEGY_POOL` / `PLATFORM_TREASURY` / `PLATFORM_REVENUE`),
-the DB-level trigger forbidding any pool→platform crossing outside the named fee types,
-`InvestmentPosition`, unit register, and the `Σ units == totalUnits` invariant.
-*Acceptance:* a test attempts, via direct SQL, to move value from a pool to a platform account
-under a non-fee transaction type — and the database refuses it.
+### MVP11 — Investment Accounts — ✅ done
+Accounting entities (`PENDING_SUBSCRIPTION` / `STRATEGY_POOL` / `PLATFORM_TREASURY` /
+`PLATFORM_REVENUE`), the DB-level trigger forbidding any pool→platform crossing outside the
+named fee types, `InvestmentStrategy`, `InvestmentPosition`, `NavSnapshot`,
+`SubscriptionRequest`, `FeeAccrual`.
 
-### MVP12 — Investment Marketplace
+*Acceptance — met.* 25 tests, every one of which writes **raw SQL with no service in the path**,
+because the claim is "the database refuses", not "the application declines":
+- the same pool→platform movement is refused under `ADJUSTMENT`, `TRANSFER_INTERNAL`, `TRADE`,
+  `DEPOSIT`, `WITHDRAWAL`, `SUBSCRIPTION_SETTLEMENT`, `REDEMPTION_SETTLEMENT` and `P2P_RELEASE`,
+  and accepted under `FEE_CRYSTALLISATION` and `TRADING_FEE`;
+- refused too when the platform leg is a 1-unit rounding-sized leg hidden among legitimate ones;
+- `perfFeeBps > 5000` and `maxDrawdownBps > 1000` rejected by CHECK constraints;
+- `hwmUnitPrice` cannot decrease; NAV snapshots cannot be edited or deleted; a fee accrual's
+  rate, base, HWM and amount are frozen after insert and crystallisation happens once;
+- a `STRATEGY_POOL` account cannot exist without a strategy, a user bucket cannot carry one, and
+  a strategy cannot have two pool accounts for the same asset.
+
+*Bug found by these tests:* the `ledger_accounts_personal_unique` partial index from MVP2
+predated pools and treated every `managedAccountId IS NULL` row as personal, which capped the
+platform at **one strategy per asset** — the second strategy to hold USDC was rejected outright.
+Narrowed in migration `20260814200200_scope_personal_account_uniqueness`.
+
+### MVP12 — Investment Marketplace — ⏳ next
 `Strategy` model with full configuration, publication workflow, marketplace UI, and disclosure
 of lock-up/redemption terms **before** the amount field. Forbidden-claims lint over user-facing
 strings. *Acceptance:* a strategy cannot reach `OPEN` without a passing backtest; publishing copy

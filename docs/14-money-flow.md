@@ -88,14 +88,21 @@ Manager intent: LONG BTC 2,000,000 USDT for strategy "AI Top 25"
   → fills
 ```
 
-On each fill:
+On each fill — **two transactions, one database transaction**:
 
 ```
+  type: TRADE                     pool-internal, no platform leg permitted
   [P] strategy.POOL_CASH          −500,000 USDT
   [P] strategy.POOL_POSITION      + 7.42... BTC
-  [P] strategy.POOL_CASH          −    250 USDT   (venue fee)
-  [F] platform.REVENUE            +    250 USDT   ← disclosed execution fee, if any
+
+  type: TRADING_FEE               the only part that crosses to the platform
+  [P] strategy.POOL_CASH          −    250 USDT
+  [F] platform.REVENUE            +    250 USDT
 ```
+
+Splitting these is not bookkeeping tidiness. If `TRADE` were allowed to touch a platform
+account, "a trade" would be a general-purpose way to move any amount of investor money to the
+platform — so `TRADE` is barred from crossing the boundary and the fee carries its own type.
 
 Idempotent on `(venueKey, venueExecutionId)`. Owner of the BTC: **the same investors, in the
 same proportions.** A trade changes *what* the pool holds, never *who* holds it.
@@ -251,9 +258,12 @@ spent twice by a concurrent trade or a second withdrawal.
 
 ## What this design refuses to allow
 
-1. **No path from investor or pool funds to the platform** except `FEE_CRYSTALLISATION` and
-   disclosed `TRADING_FEE`, both computed by the fee engine from configured rates, both blocked
-   at the database level for any other transaction type.
+1. **No path from investor or pool funds to the platform** except `FEE_CRYSTALLISATION`,
+   disclosed `TRADING_FEE` and `FEE` — all computed by the fee engine or reported by a venue,
+   never entered by an operator. Every other transaction type, `TRADE` and `ADJUSTMENT`
+   included, is blocked at the database level. Proven by a test suite that writes raw SQL with
+   no service in the path: the same pool→platform movement is refused under eight transaction
+   types and accepted under the fee types.
 2. **No operator-entered amounts.** There is no endpoint anywhere that accepts "move X from A to
    B" from an administrator. Value moves only as the consequence of a typed event: a deposit, a
    fill, a fee the schedule produced, a redemption the investor requested.
