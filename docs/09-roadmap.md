@@ -384,6 +384,81 @@ enabled for the investment module without a signed attestation naming the jurisd
 
 ---
 
+## Track B — Hybrid exchange (MVP24–MVP31)
+
+Added by `docs/15-hybrid-exchange-addendum.md`. Nothing in MVP1–MVP23 is dropped; this is a
+second product surface over the same ledger, identity and risk engine.
+
+**Read `docs/15` §0 first.** It records three places where the hybrid-exchange spec contradicts
+what is already built, and which side wins:
+1. **Self-custody keys vs. managed pools** — both, as a per-account `custody_mode`. A manager
+   cannot trade assets the platform is structurally unable to sign for, so investment products
+   and escrow exist only on custodial accounts.
+2. **Own order book vs. liquidity aggregation** — both, as a per-market `execution_mode`
+   (`INTERNAL_BOOK` / `ROUTED` / `HYBRID`). That is what "hybrid exchange" means.
+3. **The 50/50 profit share is a property of an investment strategy**, not a platform-wide fee.
+   Spot and P2P carry their own disclosed maker/taker fees.
+
+Ordering principle, unchanged: **the ledger and its constraints land before anything that moves
+money through them.** The matching engine is deliberately not first — an engine with nothing safe
+to settle into is a demo.
+
+### MVP24 — Telegram Mini App authentication
+`initData` validated by HMAC-SHA256 against the bot token, in constant time, with a 60-second
+freshness window and a monotonic `last_auth_date` so a replayed payload is refused even inside
+it. Access token in memory only; refresh token `HttpOnly; Secure; SameSite=Strict`.
+*Acceptance:* a tampered payload, a stale payload, and a replayed payload are each 401 — proven
+by test, not by inspection. No token appears in `localStorage` or `sessionStorage` (asserted in
+a browser test).
+
+### MVP25 — TMA shell
+`@telegram-apps/sdk`: viewport-safe insets, Telegram theme mapped onto the existing design
+tokens, hardware Back button wired to the router, `MainButton` as the primary action.
+*Acceptance:* the app is usable at Telegram's smallest viewport with no horizontal overflow, and
+Back navigates rather than closing the app.
+
+### MVP26 — Self-custody wallet
+Client-side BIP-39 generation via Web Crypto, AES-GCM under a PBKDF2 key (≥100k iterations), and
+a server that stores only an undecryptable blob with its KDF parameters beside it.
+*Acceptance:* no code path transmits a mnemonic, key or PIN — asserted by a test that inspects
+every outbound request during wallet creation. `custody_mode` is visible on every balance, and
+investment/escrow endpoints refuse a `SELF_CUSTODY` account.
+
+### MVP27 — Markets and order lifecycle
+`markets`, `orders`, `trades`. Funds are locked in the ledger **before** an order becomes `OPEN`
+— enforced by a CHECK constraint, so an unfunded open order cannot exist.
+*Acceptance:* an order placed with insufficient balance never reaches `OPEN`; ten concurrent
+orders against one balance leave exactly one funded.
+
+### MVP28 — Matching engine (Rust)
+In-memory book, price-time priority, FIFO within a level, deterministic sequencing from a durable
+command log with periodic snapshots to bound replay.
+*Acceptance:* property tests for FIFO fairness and quantity conservation; killing the engine
+mid-session and replaying the log reproduces the identical book. The engine holds no balances and
+has no path to move value.
+
+### MVP29 — P2P escrow
+Ads, orders, ledger-backed escrow locked at order open, durable payment-window timers, TOTP on
+release, and dispute arbitration as a typed audited posting.
+*Acceptance:* a restart does not strand locked funds; an expired window unlocks them; the same
+balance cannot be sold twice; no operator can move escrow by hand.
+
+### MVP30 — Fiat gateway and equities
+Provider abstractions for fiat on/off-ramp and a broker adapter (Alpaca-shaped), with trading
+hours and corporate actions.
+*Acceptance:* a completed fiat transfer that has not posted to the ledger is impossible (CHECK
+constraint); provider callbacks are idempotent on `(provider, reference)`.
+
+### MVP31 — Hardening pass
+Everything in `docs/16` Part 2 verified rather than asserted: rate limits under load, WebSocket
+handshake auth and backpressure, the framing split between website (`DENY`) and TMA
+(`frame-ancestors`), the automatic 24h withdrawal freeze after three 2FA failures, and a test
+proving the security logger cannot emit key material.
+*Acceptance:* an external penetration test, findings tracked to closure or explicit accepted-risk
+sign-off, before any `PLATFORM_MODE=live` deployment.
+
+---
+
 ## How to pick up MVP2
 
 1. `apps/api/prisma/schema.prisma` already has the MVP2 tables (`wallets`,
