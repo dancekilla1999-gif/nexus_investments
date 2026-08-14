@@ -13,6 +13,13 @@ export interface PostingLeg {
   amount: Prisma.Decimal | string | number;
   /** Null/omitted = the user's own self-directed balance; set = a Managed Account sub-balance. */
   managedAccountId?: string | null;
+  /**
+   * Required on STRATEGY_POOL legs and forbidden on every other type — a pool account is owned
+   * by a strategy's investors collectively, not by the `userId` on the row (docs/12 §1). The
+   * database enforces the same rule via `ledger_accounts_pool_requires_strategy`; this is here
+   * so the mistake is a compile-time shape rather than a constraint violation at runtime.
+   */
+  strategyId?: string | null;
 }
 
 export interface PostTransactionInput {

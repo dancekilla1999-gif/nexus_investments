@@ -115,6 +115,7 @@ model User {
   // Investment management (docs/12) — Mode B
   investmentPositions  InvestmentPosition[]
   subscriptionRequests SubscriptionRequest[]
+  redemptionRequests   RedemptionRequest[]
 
   @@index([email])
   @@map("users")
@@ -1157,6 +1158,9 @@ enum NotificationType {
   NEWS
   /// Managed Account circuit-breaker / drawdown alerts — docs/10-managed-accounts-architecture.md §4.
   RISK_ALERT
+  /// Investment-strategy lifecycle: subscription settled, redemption settled or queued, fees
+  /// crystallised. Distinct from SUBSCRIPTION, which is a billing plan, not a fund position.
+  INVESTMENT
 }
 
 model Notification {
@@ -1435,6 +1439,7 @@ model InvestmentStrategy {
   positions InvestmentPosition[]
   navSnapshots NavSnapshot[]
   subscriptions SubscriptionRequest[]
+  redemptions   RedemptionRequest[]
   ledgerAccounts LedgerAccount[]
 
   @@index([status])
@@ -1573,4 +1578,47 @@ model FeeAccrual {
 
   @@index([positionId, kind])
   @@map("fee_accruals")
+}
+
+enum RedemptionRequestStatus {
+  /// Requested; waiting for lock-up/notice to elapse and the next dealing point.
+  PENDING
+  /// Units cancelled and proceeds returned to the investor's wallet.
+  SETTLED
+  /// The pool lacked free cash; waiting for the manager to raise it. Still the investor's claim.
+  QUEUED
+  CANCELLED
+}
+
+model RedemptionRequest {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id])
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+
+  /// Units the investor asked to redeem. Denominated in units, not currency, because the
+  /// currency value is not known until the dealing-point NAV is struck — quoting an amount up
+  /// front would be quoting a price the platform cannot honour.
+  units  Decimal @db.Decimal(36, 18)
+  status RedemptionRequestStatus @default(PENDING)
+
+  /// The earliest dealing point this may settle at, stamped from lock-up and notice period at
+  /// request time so a later config change cannot move an investor's date.
+  eligibleFrom DateTime
+
+  settledSnapshotId String?
+  /// Set at settlement: gross proceeds, fees crystallised, and what actually reached the wallet.
+  grossAmount Decimal? @db.Decimal(36, 18)
+  feesCharged Decimal? @db.Decimal(36, 18)
+  netAmount   Decimal? @db.Decimal(36, 18)
+
+  idempotencyKey String @unique
+  createdAt   DateTime  @default(now())
+  settledAt   DateTime?
+  cancelledAt DateTime?
+
+  @@index([strategyId, status])
+  @@index([userId])
+  @@map("redemption_requests")
 }

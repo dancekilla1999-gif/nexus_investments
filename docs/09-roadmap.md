@@ -307,12 +307,34 @@ Also fixed: `MarkdownLite` rendered each hard-wrapped source line as its own blo
 the risk disclosure's warning callout mid-sentence and dropped its tail out of the warning box
 into plain body text.
 
-### MVP13 — Master Strategy Account — ⏳ next
-Pool cash and positions, subscription/redemption at dealing points, `PENDING_SUBSCRIPTION`
-bucket. *Acceptance:* a subscription placed between two marks cannot capture P&L struck before
-it — the dilution test.
+### MVP13 — Master Strategy Account — ✅ done
+Pool cash, subscription and redemption at dealing points, the `PENDING_SUBSCRIPTION` bucket, and
+the unit register.
 
-### MVP14 — Allocation Engine
+*Acceptance — met.* The dilution test is real: Alice invests 1000 at inception (1000 units), the
+pool gains 500, Bob invests 1500 and receives exactly **1000** units at the struck price of 1.50
+— not the 1500 a stale price would have given him, which would have moved 300 from Alice to Bob.
+The test asserts both directions and the counterfactual. A second test covers the mirror case:
+capital committed *before* a gain but settled after it deals at the new price too, because it
+sat in `PENDING_SUBSCRIPTION` and was never at risk.
+
+Also covered: consent required before investing, the maximum applied to total exposure rather
+than per transaction, full no-fee refund on cancellation, idempotent retries, inception pricing,
+an unpriceable (wiped-out) pool refusing to deal, immutable valuations with a recorded source,
+lock-up and notice periods, proportional cost-basis return, and redemptions **queuing** rather
+than being paid from platform funds.
+
+*Two bugs found by the invariant test:*
+- Units are computed by division, so `400 / 1.2` is a repeating decimal. Rounding happened once
+  when a position row was written and again, differently, when the same value went into
+  `totalUnits` — leaving `Σ units == totalUnits` false by ~1e-17 per uneven deal. Values are now
+  quantised once, downward, before either write: rounding *up* would issue more units than the
+  money paid for and dilute every existing holder.
+- Prisma's `{ increment }` does not preserve full decimal precision on a `Decimal(36,18)`
+  column. `totalUnits` is now computed in Decimal and written under a `FOR UPDATE` lock, which
+  also closes the lost-update race that a read-modify-write on a shared counter always has.
+
+### MVP14 — Allocation Engine — ⏳ next
 Derived per-investor exposure, dealing-point flow netting, pro-rata wind-down.
 *Acceptance:* Σ derived exposures equals pool exposure exactly, at 10,000 positions.
 

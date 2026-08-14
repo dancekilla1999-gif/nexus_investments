@@ -5,6 +5,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { JwtPayload } from '../common/types/authenticated-request';
 import { CreateStrategyDto } from './dto/create-strategy.dto';
+import { StrikeDealingPointDto } from './dto/subscribe.dto';
+import { DealingService } from './dealing.service';
 import { SetStrategyStatusDto } from './dto/set-status.dto';
 import { UpdateStrategyDto } from './dto/update-strategy.dto';
 import { InvestmentStrategiesService } from './investment-strategies.service';
@@ -21,7 +23,10 @@ import { InvestmentStrategiesService } from './investment-strategies.service';
 @Controller('admin/investments/strategies')
 @Roles(UserRole.INVESTMENT_MANAGER, UserRole.ADMIN, UserRole.SUPERADMIN)
 export class AdminInvestmentsController {
-  constructor(private readonly strategies: InvestmentStrategiesService) {}
+  constructor(
+    private readonly strategies: InvestmentStrategiesService,
+    private readonly dealing: DealingService,
+  ) {}
 
   @Get()
   list() {
@@ -45,6 +50,21 @@ export class AdminInvestmentsController {
   })
   open(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.strategies.open(user.sub, id);
+  }
+
+  /**
+   * Strike a dealing point: value the pool, then settle every pending subscription and due
+   * redemption at that one price. Valuing first is what stops new money from either capturing
+   * existing holders' gains or being diluted by them.
+   */
+  @Post(':id/dealing-point')
+  @ApiOperation({ summary: 'Strike a NAV and settle pending subscriptions and redemptions' })
+  strikeDealingPoint(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+    @Body() dto: StrikeDealingPointDto,
+  ) {
+    return this.dealing.strikeDealingPoint(id, dto.markSource, user.sub);
   }
 
   @Patch(':id/status')

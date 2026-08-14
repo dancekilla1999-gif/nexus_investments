@@ -194,7 +194,13 @@ export class LedgerService {
     const ids: string[] = [];
     for (const leg of legs) {
       ids.push(
-        await this.getOrCreateAccountId(leg.userId, leg.assetId, leg.type, leg.managedAccountId ?? null),
+        await this.getOrCreateAccountId(
+          leg.userId,
+          leg.assetId,
+          leg.type,
+          leg.managedAccountId ?? null,
+          leg.strategyId ?? null,
+        ),
       );
     }
     return ids;
@@ -205,9 +211,31 @@ export class LedgerService {
     assetId: string,
     type: LedgerAccountType,
     managedAccountId: string | null,
+    strategyId: string | null,
   ): Promise<string> {
+    if (type === LedgerAccountType.STRATEGY_POOL && strategyId === null) {
+      throw new BadRequestException({
+        code: 'POOL_LEG_REQUIRES_STRATEGY',
+        message: 'A STRATEGY_POOL leg must name the strategy that owns it.',
+      });
+    }
+    if (type !== LedgerAccountType.STRATEGY_POOL && strategyId !== null) {
+      // Otherwise "whose money is this?" would have two contradictory answers on one row.
+      throw new BadRequestException({
+        code: 'STRATEGY_ON_NON_POOL_LEG',
+        message: `A ${type} leg cannot belong to a strategy pool.`,
+      });
+    }
+
+    // Pool accounts are keyed by (strategy, asset) — many strategies share the platform system
+    // user, so userId is not part of their identity.
+    const identity =
+      type === LedgerAccountType.STRATEGY_POOL
+        ? { assetId, type, strategyId }
+        : { userId, assetId, type, managedAccountId, strategyId: null };
+
     const existing = await this.prisma.ledgerAccount.findFirst({
-      where: { userId, assetId, type, managedAccountId },
+      where: identity,
       select: { id: true },
     });
     if (existing) return existing.id;
@@ -219,17 +247,18 @@ export class LedgerService {
           assetId,
           type,
           managedAccountId,
+          strategyId,
           balance: { create: { userId, assetId, type, amount: new Prisma.Decimal(0) } },
         },
         select: { id: true },
       });
       return created.id;
     } catch (err) {
-      // Lost a race to create the same account — the partial unique index
-      // (ledger_accounts_personal_unique) or the composite unique caught it. Re-read the winner.
+      // Lost a race to create the same account — one of the partial unique indexes
+      // (ledger_accounts_personal_unique / _pool_unique / _platform_unique) caught it.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const winner = await this.prisma.ledgerAccount.findFirstOrThrow({
-          where: { userId, assetId, type, managedAccountId },
+          where: identity,
           select: { id: true },
         });
         return winner.id;

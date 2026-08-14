@@ -1,5 +1,93 @@
 # Changelog
 
+## MVP13 — Master Strategy Account: dealing points, subscription and redemption
+
+**Date:** 2026-08-14
+
+The first real movement of investor money into a pool. Money leaves a wallet, becomes a claim on
+a strategy, and comes back — with the mechanism that stops one investor being paid out of
+another's pocket.
+
+### Committing capital and buying units are two separate events
+
+A subscription moves money out of `AVAILABLE` immediately, into `PENDING_SUBSCRIPTION` — still
+the investor's, earning nothing, refundable in full with no fee. Units are issued later, at a
+**dealing point**, using a NAV struck before any of the day's flows touch the pool.
+
+Collapsing those steps — issuing units at whatever price was last known — is how a new investor
+either captures gains belonging to existing holders or is diluted by them. The order of
+operations inside a dealing point is what prevents it: value the pool, *then* settle
+subscriptions, *then* settle redemptions, all at that one price. Striking NAV after moving
+subscription cash in would inflate `poolNav` while `totalUnits` still reflected only existing
+holders, handing the new investor's own money to everyone else.
+
+### The dilution test
+
+Alice invests 1000 at inception and receives 1000 units. The pool gains 500. Bob invests 1500
+and receives exactly **1000** units at the struck price of 1.50 — not the 1500 a stale price
+would have given him, which would have transferred 300 of Alice's gain to Bob. The test asserts
+Alice's units are untouched, Bob's are what the new price implies, the two claims exactly exhaust
+the pool, and the diluted outcome did *not* happen.
+
+The mirror case is tested too: capital committed before a gain but settled after it also deals at
+the new price, because it sat in `PENDING_SUBSCRIPTION` and was never at risk.
+
+### Redemption
+
+Denominated in units, not currency — the currency value is unknown until the dealing-point NAV is
+struck, so quoting an amount up front would be quoting a price the platform cannot honour.
+Lock-up and notice are stamped at request time from the terms then in force, so a later config
+change cannot move an investor's date. Cost basis is returned in proportion to the units
+cancelled.
+
+When the pool lacks free cash a redemption **queues**. It is never part-paid and never topped up
+from platform funds — doing so would convert a pool shortfall into a hidden platform loss and
+disguise the real problem.
+
+### Two bugs the invariant test found
+
+`Σ position.units == strategy.totalUnits` is the invariant every per-investor figure rests on. A
+test that subscribes an uneven amount broke it, twice:
+
+1. **Double rounding.** Units come from a division, so `400 / 1.2` repeats. The value was rounded
+   once when the position row was written and again, differently, when the same value was added
+   into `totalUnits` — Postgres rounds the accumulated sum, not each addend. The two drifted
+   apart by ~1e-17 per uneven deal. Values are now quantised once, before either write, and
+   **downward**: rounding up would issue more units than the money paid for and dilute every
+   existing holder, while rounding down leaves a sub-wei residue in the pool that harms nobody.
+2. **`{ increment }` loses precision** on a `Decimal(36,18)` column — the arithmetic happens
+   outside Decimal. `totalUnits` is now computed in Decimal and written under a `FOR UPDATE`
+   lock, which additionally closes the lost-update race that a read-modify-write on a shared
+   counter always has.
+
+Neither would have been visible without an invariant test; both would have made every investor's
+displayed value slightly, silently wrong, and worse over time.
+
+### Ledger
+
+`PostingLeg` gains `strategyId`, required on `STRATEGY_POOL` legs and rejected on every other
+type — the same rule the database enforces, moved to where it fails as a wrong shape rather than
+a constraint violation. Pool accounts are keyed by `(strategy, asset)` rather than by user, since
+many strategies share the platform system user.
+
+### Verification
+
+25 new e2e tests. 242 total (99 unit/integration including live Sepolia, 143 e2e against live
+PostgreSQL and Redis). A full-cycle test — subscribe, gain, second subscriber, redeem — confirms
+the balance projection still matches a from-scratch replay of every ledger entry, and that what
+remains in the pool is exactly what the remaining units claim.
+
+Trading P&L in these tests posts against `EXTERNAL`, which is not a test shortcut: profit from an
+external venue genuinely crosses the platform boundary, so that is the same posting a real fill
+will make.
+
+### Not built yet
+
+Fees. Redemptions currently deduct zero because nothing has accrued — the fee engine is MVP17,
+and reporting a deduction that had not been calculated would misstate what an investor receives.
+
+---
+
 ## MVP12 — Investment marketplace and the publication gates
 
 **Date:** 2026-08-14
