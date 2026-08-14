@@ -44,11 +44,14 @@ export function FaucetCard({ assets }: { assets: WalletAsset[] }) {
             on-chain deposits exist. It posts through the same double-entry path a real deposit
             will. These are not real assets and have no value.
           </p>
-          <div className="mt-3 flex gap-2">
+          {/* A <select> is sized by its longest option, and a flex item's default min-width is
+              its content — so without min-w-0 the chain names push this row past the viewport
+              on a phone and scroll the entire page sideways. */}
+          <div className="mt-3 flex flex-wrap gap-2">
             <select
               value={assetId}
               onChange={(e) => setAssetId(e.target.value)}
-              className="h-9 rounded-lg border border-border bg-surface px-2.5 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-2.5 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {assets.map((a) => (
                 <option key={a.id} value={a.id}>

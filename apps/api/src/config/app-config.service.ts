@@ -75,4 +75,45 @@ export class AppConfigService {
   get logLevel() {
     return this.config.get('LOG_LEVEL', { infer: true });
   }
+
+  // ── Blockchain ──────────────────────────────────────────────────────────
+
+  /**
+   * Chain-key-indexed lookup so adding a chain is a config + seed change, not a code change
+   * (docs/06-blockchain-architecture.md §1). Sepolia is the Ethereum testnet this deployment
+   * points at while PLATFORM_MODE=sandbox.
+   */
+  chainRpcUrl(chainKey: string): string | undefined {
+    const byChain: Record<string, string | undefined> = {
+      ethereum: this.config.get('EVM_RPC_URL_SEPOLIA', { infer: true }),
+    };
+    return byChain[chainKey];
+  }
+
+  chainAccountXpub(chainKey: string): string | undefined {
+    const byChain: Record<string, string | undefined> = {
+      ethereum: this.config.get('EVM_ACCOUNT_XPUB_SEPOLIA', { infer: true }),
+    };
+    return byChain[chainKey];
+  }
+
+  get depositScanBatchBlocks() {
+    return this.config.get('DEPOSIT_SCAN_BATCH_BLOCKS', { infer: true });
+  }
+
+  get depositScanIntervalMs() {
+    return this.config.get('DEPOSIT_SCAN_INTERVAL_MS', { infer: true });
+  }
+
+  get depositWatcherEnabled() {
+    return this.config.get('DEPOSIT_WATCHER_DISABLED', { infer: true }) !== '1';
+  }
+
+  get reconciliationIntervalMs() {
+    return this.config.get('RECONCILIATION_INTERVAL_MS', { infer: true });
+  }
+
+  get reconciliationEnabled() {
+    return this.config.get('RECONCILIATION_DISABLED', { infer: true }) !== '1';
+  }
 }

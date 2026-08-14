@@ -40,6 +40,32 @@ export const envSchema = z.object({
 
   LOG_LEVEL: z.string().default('info'),
 
+  // ── Blockchain (MVP2 deposits) ──
+  // Per-chain RPC endpoints and account-level extended PUBLIC keys, resolved by chain key
+  // (see AppConfigService.chainRpcUrl / chainAccountXpub). A chain missing either is skipped
+  // by the adapter registry with a loud warning rather than silently watching nothing.
+  //
+  // An xpub is a public key: it derives deposit addresses and can sign nothing. Signing keys
+  // never appear in configuration at all — see docs/06-blockchain-architecture.md §4.
+  EVM_RPC_URL_SEPOLIA: z.string().optional(),
+  EVM_ACCOUNT_XPUB_SEPOLIA: z.string().optional(),
+
+  /** How many blocks a single watcher pass may scan. Bounds RPC cost per tick. */
+  DEPOSIT_SCAN_BATCH_BLOCKS: z.coerce.number().int().positive().max(2000).default(50),
+  /** Watcher poll interval. */
+  DEPOSIT_SCAN_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  /** Set to '1' to keep the deposit watcher from starting (tests drive it manually). */
+  DEPOSIT_WATCHER_DISABLED: z.string().optional(),
+
+  /**
+   * How often custody reconciliation compares the ledger's obligations against on-chain
+   * holdings. Every run costs one balance read per (address × asset), so this is deliberately
+   * far slower than the deposit scan: it is a safety net, not a data source.
+   */
+  RECONCILIATION_INTERVAL_MS: z.coerce.number().int().positive().default(900_000),
+  /** Set to '1' to keep custody reconciliation from starting (tests drive it manually). */
+  RECONCILIATION_DISABLED: z.string().optional(),
+
   NOTIFICATIONS_EMAIL_PROVIDER: z.enum(['console', 'resend', 'ses']).default('console'),
 });
 

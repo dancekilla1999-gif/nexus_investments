@@ -59,7 +59,7 @@ with real auth/profile data and honest empty states for everything not yet built
 
 ---
 
-## MVP2 — Wallet + Ledger + Deposit — 🚧 in progress (ledger + wallet done, chain deposits remain)
+## MVP2 — Wallet + Ledger + Deposit — ✅ complete (sandbox/testnet)
 
 **Scope:** `blockchain` module chain adapters, `wallet` deposit-address issuance, `ledger`
 double-entry engine, deposit detection/crediting end-to-end **in testnet/sandbox mode only**.
@@ -85,23 +85,45 @@ double-entry engine, deposit detection/crediting end-to-end **in testnet/sandbox
       with platform-managed buckets (LOCKED/PENDING) rejected as transfer endpoints server-side.
 - [x] A real Wallet page and live dashboard balances, plus a clearly-labeled sandbox testnet
       faucet that posts through the exact deposit accounting path a real deposit will use.
-- [x] 87 automated tests passing (46 unit, 41 e2e against live PostgreSQL + Redis).
+- [x] **Blockchain abstraction layer** (`BlockchainAdapter`) with a viem-based EVM adapter
+      serving every EVM chain, verified against a live Sepolia node rather than a mock.
+- [x] **Watch-only HD deposit-address derivation** from an account xpub. No private key or seed
+      appears in configuration at all; the API is structurally incapable of signing.
+- [x] **Deposit address issuance** per (user, chain), stable across requests, with the
+      derivation counter read under a row lock so two concurrent requests can never be handed
+      the same address.
+- [x] **Deposit detection → PENDING credit on first sight → AVAILABLE at the required
+      confirmation depth**, idempotent on `(chainId, txHash, logIndex)` so rescans, restarts and
+      reorg rewinds cannot double-credit.
+- [x] **Scheduled custody reconciliation** comparing the EXTERNAL boundary balance against
+      on-chain holdings, filing `RECONCILIATION_MISMATCH` risk events — shortfall at severity 5,
+      surplus at 1, deduplicated to one open incident per (chain, asset).
+- [x] **Deposit UI**: per-chain address with copy, an unmissable wrong-network warning, the list
+      of assets actually creditable on that chain, and live confirmation progress that never
+      lets a pending deposit read as spendable.
+- [x] 132 automated tests passing (64 unit/integration including live Sepolia, 68 e2e against
+      live PostgreSQL + Redis), plus headless-browser verification at desktop and mobile widths.
 
-**Remaining for this milestone:**
-- [ ] `BlockchainAdapter` implementations and chain watchers (start with one EVM testnet).
-- [ ] Deposit address derivation and issuance per (chain, asset).
-- [ ] Deposit detection → PENDING credit on first sight → AVAILABLE on required confirmations,
-      keyed by `(chainId, txHash, logIndex)` for idempotency.
-- [ ] Scheduled custody reconciliation comparing the EXTERNAL boundary balance against
-      on-chain holdings, raising a `RECONCILIATION_MISMATCH` risk event on drift.
-
-**Design decisions made during implementation** (both found by writing the tests, see
-`CHANGELOG.md`):
+**Design decisions made during implementation** (each found by testing against real
+infrastructure rather than mocks — see `CHANGELOG.md`):
 - A `LedgerAccountType.EXTERNAL` platform-boundary contra-account was added: double-entry has
   no way to originate value without one, so a deposit was structurally impossible to record.
 - `SET CONSTRAINTS ALL IMMEDIATE` is issued at the end of every ledger transaction, because
   Prisma swallows errors raised during its own COMMIT — without it a violated constraint
   correctly rolled the write back but reported success to the caller.
+- Deriving an address from a *compressed* public key produced a valid-looking but wrong address,
+  which would have made every deposit address unspendable. Keys are decompressed before hashing,
+  with a regression test against a published test vector.
+- A `SANDBOX_MINT` contra-account was split out of `EXTERNAL`: the faucet's play money was being
+  booked as value that had crossed the custody boundary, making reconciliation report a
+  permanent multi-thousand-ETH shortfall against a live chain.
+- One shared definition of "creditable asset" (`src/deposits/creditable-assets.ts`) now backs
+  the watcher, the deposit screen and reconciliation. A token row with no contract address is
+  invisible to the scanner, and was previously being reconciled against the *native* balance.
+
+**Deliberately not in this milestone:** withdrawals (they ship with the risk engine and AML
+screening that gate them, MVP3), and sweeping to cold custody — until sweeping exists,
+reconciliation's custody side is simply the deposit addresses.
 
 ## MVP3 — Withdrawal + Security — ⏳ designed
 

@@ -3,6 +3,8 @@ import { clearStoredRefreshToken, getStoredRefreshToken, storeRefreshToken } fro
 import {
   AcceptanceStatus,
   ApiErrorBody,
+  DepositAddress,
+  DepositRecord,
   Device,
   LoginResponse,
   Profile,
@@ -156,6 +158,15 @@ export const api = {
 
   sandboxFaucet: (input: { assetId: string; amount: string }) =>
     request<TransferResult>('/wallet/sandbox/faucet', { method: 'POST', body: JSON.stringify(input) }),
+
+  /** Chains this deployment can actually watch — not every chain in the database. */
+  getDepositableChains: () => request<string[]>('/wallet/deposits/chains'),
+
+  /** Idempotent: returns the user's existing address for the chain if one was already issued. */
+  getDepositAddress: (chainKey: string) =>
+    request<DepositAddress>(`/wallet/deposits/address/${chainKey}`, { method: 'POST' }),
+
+  listDeposits: () => request<DepositRecord[]>('/wallet/deposits'),
 
   refreshAccessToken,
 };

@@ -56,6 +56,26 @@ async function main() {
     update: {},
     create: { symbol: 'ETH', name: 'Ether', chainId: ethereum.id, decimals: 18, kind: 'NATIVE', coingeckoId: 'ethereum' },
   });
+  // Circle's official USDC on Sepolia. A token is only *depositable* if the platform knows its
+  // contract address — that is what lets the watcher filter logs for it and what lets an
+  // observed transfer be resolved to an asset (see src/deposits/creditable-assets.ts). Without
+  // it a token row is ledger-usable but invisible to the chain scanner.
+  await prisma.asset.upsert({
+    where: { chainId_symbol: { chainId: ethereum.id, symbol: 'USDC' } },
+    update: { contractAddress: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238' },
+    create: {
+      symbol: 'USDC',
+      name: 'USD Coin (Sepolia)',
+      chainId: ethereum.id,
+      decimals: 6,
+      kind: 'TOKEN',
+      contractAddress: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
+      coingeckoId: 'usd-coin',
+    },
+  });
+  // Tether has no canonical Sepolia deployment, so this row deliberately carries no contract
+  // address: it exists for ledger, P2P and market plumbing, and the deposit screen correctly
+  // declines to list it as creditable rather than inviting a deposit nothing would detect.
   await prisma.asset.upsert({
     where: { chainId_symbol: { chainId: ethereum.id, symbol: 'USDT' } },
     update: {},

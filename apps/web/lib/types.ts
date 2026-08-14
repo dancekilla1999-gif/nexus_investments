@@ -113,3 +113,44 @@ export interface TransferResult {
   transactionId: string;
   balances: WalletBalance[];
 }
+
+export interface DepositAddress {
+  chainKey: string;
+  chainName: string;
+  /**
+   * Derived watch-only from an account-level extended public key. No private key for this
+   * address exists in any configuration the API can read — see docs/06 §4.
+   */
+  address: string;
+  confirmationsRequired: number;
+  isTestnet: boolean;
+  /**
+   * Symbols a deposit to this address can actually be credited in. Comes from the API rather
+   * than being filtered client-side from the asset list: an asset can exist on a chain and
+   * still be undetectable by the scanner (a token row with no contract address), and telling a
+   * user it is supported would invite them to send funds nothing is watching for.
+   */
+  supportedAssets: string[];
+}
+
+export type DepositStatus =
+  | 'DETECTED'
+  | 'PENDING_CONFIRMATION'
+  | 'CREDITED'
+  | 'FAILED'
+  | 'ORPHANED';
+
+export interface DepositRecord {
+  id: string;
+  chainKey: string;
+  assetSymbol: string;
+  /** Decimal string, as everywhere money is represented. */
+  amount: string;
+  status: DepositStatus;
+  confirmations: number;
+  confirmationsRequired: number;
+  txHash: string;
+  explorerUrl: string | null;
+  detectedAt: string;
+  creditedAt: string | null;
+}

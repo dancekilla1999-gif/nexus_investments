@@ -83,9 +83,11 @@ export class WalletService {
    * Sandbox-only testnet faucet.
    *
    * Credits play money so the wallet and (later) trading flows can be exercised end to end
-   * before real deposits exist. It runs through the exact same ledger path a real deposit will
-   * — debit EXTERNAL, credit the user — so it proves the deposit accounting rather than
-   * bypassing it.
+   * before real deposits exist. It runs through the same double-entry path a real deposit does
+   * — debit a contra-account, credit the user — so it proves the deposit accounting rather than
+   * bypassing it. The one deliberate difference is *which* contra-account: SANDBOX_MINT rather
+   * than the EXTERNAL custody boundary, so synthetic value is never mistaken for value the
+   * platform must hold on chain (see the leg below).
    *
    * It refuses to run when PLATFORM_MODE=live. That check is here, server-side, and not merely
    * a hidden button: docs/01-PRD.md principle #2 is that nothing may create the appearance of a
@@ -120,7 +122,11 @@ export class WalletService {
         {
           userId: PLATFORM_SYSTEM_USER_ID,
           assetId: dto.assetId,
-          type: LedgerAccountType.EXTERNAL,
+          // SANDBOX_MINT, not EXTERNAL. Play money must never be booked as value that crossed
+          // the platform boundary: custody reconciliation reads EXTERNAL as the obligation that
+          // real on-chain holdings have to back, and faucet credits there make it report a
+          // permanent shortfall that drowns out a genuine one.
+          type: LedgerAccountType.SANDBOX_MINT,
           amount: amount.negated(),
         },
         { userId, assetId: dto.assetId, type: LedgerAccountType.AVAILABLE, amount },

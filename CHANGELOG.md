@@ -1,6 +1,102 @@
 # Changelog
 
-## MVP2 — Double-entry ledger and wallet
+## MVP2 (part 2) — On-chain deposits and custody reconciliation
+
+**Date:** 2026-08-14
+
+This completes MVP2. Part 1 built the ledger and proved it internally consistent; this part
+connects it to real chains and — more importantly — adds the check that the ledger's numbers are
+actually *backed*.
+
+### Deposits, end to end
+
+Watch-only HD derivation gives each user a stable address per chain, derived from an account
+extended **public** key. No private key or seed appears in configuration anywhere, so the API
+process is structurally incapable of signing. Address issuance reads the chain's derivation
+counter under a row lock: two concurrent requests reading the same index would hand two users
+the *same* deposit address and make their funds indistinguishable on chain.
+
+A watcher scans each configured chain for incoming native and ERC-20 transfers. Detection
+credits the user's PENDING bucket immediately — an invisible deposit generates a support ticket
+every single time — and PENDING moves to AVAILABLE only at the chain's required confirmation
+depth, so a reorg cannot claw back money someone has already spent.
+
+Correctness deliberately does not depend on the watcher being careful. Deposits are idempotent
+on `(chainId, txHash, logIndex)` at the database level, so overlapping scan windows, restarts
+mid-range and reorg rewinds are all harmless. That inverts the usual difficulty: the watcher is
+allowed to be crude because nothing it does can double-credit anyone.
+
+### Custody reconciliation
+
+A double-entry ledger guarantees the books are internally consistent. It cannot guarantee that
+the assets behind them exist — a ledger can be perfectly balanced and completely wrong about
+reality. `CustodyReconciliationService` compares, per (chain, asset), what the EXTERNAL boundary
+account says the platform owes against the summed on-chain balance of every deposit address it
+controls. A shortfall files a severity-5 `RECONCILIATION_MISMATCH`; a surplus files severity 1,
+because funds held but uncredited are, from the user's side, money that has gone missing. A
+persistent mismatch stays one open incident with refreshed numbers rather than one per scan.
+
+### Bugs this found before they could cost anyone money
+
+Each was caught by testing against real infrastructure — a live Sepolia node, a real PostgreSQL,
+a real browser. None would have been caught by type-checking or by mocks.
+
+1. **Compressed-key derivation produced valid-looking but wrong addresses.** `publicKeyToAddress`
+   given a compressed secp256k1 key returns a well-formed, checksummed address that is *not* the
+   one the corresponding private key controls. Every deposit address the platform issued would
+   have been unspendable — funds arriving at an address nobody holds a key for. Keys are now
+   decompressed before hashing, with a regression test pinned to a published BIP-32 test vector.
+
+2. **The sandbox faucet was booking play money as real custody.** Faucet mints debited
+   `EXTERNAL`, the same contra-account that means "this really arrived on chain." Running
+   reconciliation against live Sepolia reported a **3000 ETH shortfall** on a perfectly healthy
+   sandbox. An alarm that always fires is an alarm nobody reads — and this is the one alarm that
+   would catch the platform being unable to pay its users. Faucet mints now debit a separate
+   `SANDBOX_MINT` contra-account, so synthetic value is structurally incapable of being mistaken
+   for custody.
+
+3. **A token with no contract address was reconciled against the native balance.**
+   `getBalance(address, null)` reads native, so a `TOKEN` row without a contract address had the
+   chain's ETH holdings reported under that token's symbol — a phantom mismatch loud enough to
+   bury a real one. Worse, the deposit screen listed that same token as supported, inviting users
+   to send funds the scanner cannot see and the platform will never credit. One shared rule
+   (`src/deposits/creditable-assets.ts`) now backs the watcher, the deposit UI and reconciliation
+   so the three cannot drift.
+
+4. **A `<select>` sized by its longest option scrolled the whole wallet page sideways on a
+   phone.** Pre-existing; found by measuring `scrollWidth` in a real headless browser at 390px.
+
+### Deposit UI
+
+Per-chain address with copy-to-clipboard, and two things this screen has to get right because
+getting them wrong costs a user their money. The chain is stated on the address, in the warning,
+and next to the copy button — sending on the wrong network loses funds permanently. And a
+pending deposit shows confirmation progress with an explicit "not yet spendable", rather than
+sitting silently beside a balance card that implies otherwise. Only assets the deployment can
+actually credit are listed; if there are none, the screen says so in red rather than staying
+silent, since silence reads as "anything works".
+
+### Verification
+
+- 64 unit/integration tests, including nine against a live Sepolia node.
+- 68 e2e tests against live PostgreSQL and Redis, 26 covering the deposit pipeline: the
+  concurrent-derivation race, double-credit on rescan, confirmation gating, token decimals,
+  foreign addresses, unsupported tokens, cursor behaviour, cross-user isolation, and every
+  reconciliation branch.
+- Headless-browser verification of the wallet page at 1440px and 390px — address rendering,
+  wrong-network warning, no horizontal overflow, no console errors.
+- Reconciliation exercised end to end against live Sepolia through the risk-ops endpoint.
+
+### Still explicitly not built
+
+Withdrawals — they ship with the risk engine and AML screening that gate them (MVP3) — and
+sweeping to cold custody. Until sweeping exists, reconciliation's custody side is the deposit
+addresses; `docs/06` records what must change when it lands, so that a sweep does not read as
+theft.
+
+---
+
+## MVP2 (part 1) — Double-entry ledger and wallet
 
 **Date:** 2026-08-14
 

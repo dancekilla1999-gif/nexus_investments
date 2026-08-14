@@ -10,6 +10,17 @@ import {
 } from './ledger.types';
 
 /**
+ * Contra-accounts: the debit side of a credit to a user, negative by construction and never
+ * owned by or visible to a user. Mirrors the CHECK constraint in migration
+ * 20260814183100_sandbox_mint_non_negative_exemption — if one gains a member the other must too,
+ * or postings will pass here and be rejected at COMMIT.
+ */
+const CONTRA_ACCOUNT_TYPES: ReadonlySet<LedgerAccountType> = new Set([
+  LedgerAccountType.EXTERNAL,
+  LedgerAccountType.SANDBOX_MINT,
+]);
+
+/**
  * The double-entry ledger — the system of record for user money
  * (docs/03-database-architecture.md §1). Everything that moves value goes through `post()`:
  * deposits, withdrawals, trades, transfers, P2P escrow, fees. There is no other write path,
@@ -48,9 +59,9 @@ export class LedgerService {
     // it means the locking step below always has a row to lock. Creating them inside would
     // mean racing inserts deadlocking against each other on the unique index.
     const accountIds = await this.ensureAccounts(input.legs);
-    const externalAccountIds = new Set(
+    const contraAccountIds = new Set(
       input.legs
-        .map((leg, i) => (leg.type === LedgerAccountType.EXTERNAL ? accountIds[i] : null))
+        .map((leg, i) => (CONTRA_ACCOUNT_TYPES.has(leg.type) ? accountIds[i] : null))
         .filter((id): id is string => id !== null),
     );
 
@@ -80,10 +91,10 @@ export class LedgerService {
         });
 
         for (const [accountId, delta] of deltaByAccount) {
-          // The EXTERNAL boundary account is expected to be negative — it measures value that
-          // has crossed into the platform, not a balance anyone holds. Every user-facing
-          // account must stay at or above zero.
-          if (externalAccountIds.has(accountId)) continue;
+          // Contra-accounts are expected to be negative — they measure value booked into the
+          // platform, not a balance anyone holds. Every user-facing account must stay at or
+          // above zero.
+          if (contraAccountIds.has(accountId)) continue;
 
           const current = currentByAccount.get(accountId) ?? new Prisma.Decimal(0);
           const next = current.add(delta);

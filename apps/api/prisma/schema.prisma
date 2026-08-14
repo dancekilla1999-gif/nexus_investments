@@ -345,6 +345,14 @@ model Chain {
   confirmationsRequired  Int       @default(12)
   isEnabled              Boolean   @default(true)
 
+  /// Highest block the deposit watcher has fully processed. Null = not yet scanned; the
+  /// watcher starts from the current head rather than replaying the chain's entire history.
+  lastScannedBlock       BigInt?
+  /// Monotonic BIP-44 address index allocator. Handed out under a row lock so two concurrent
+  /// address requests can never receive the same index — which would give two users the same
+  /// deposit address and make their funds indistinguishable.
+  nextDerivationIndex    Int       @default(0)
+
   assets                 Asset[]
   wallets                Wallet[]
   walletAddresses        WalletAddress[]
@@ -423,6 +431,8 @@ model WalletAddress {
   createdAt        DateTime @default(now())
 
   @@unique([chainId, address])
+  @@unique([chainId, derivationIndex])
+  @@unique([userId, chainId])
   @@index([userId, chainId])
   @@map("wallet_addresses")
 }
@@ -481,9 +491,25 @@ enum LedgerAccountType {
   /// *something* to credit the user. That something is this account, and its balance is
   /// legitimately negative — it measures the platform's cumulative obligation to its users,
   /// which is exactly the number custody reconciliation compares against on-chain holdings
-  /// (docs/06-blockchain-architecture.md §5). It is therefore the one account type exempt from
-  /// the non-negative constraint, and it is never owned by, or visible to, a user.
+  /// (docs/06-blockchain-architecture.md §5). It is therefore exempt from the non-negative
+  /// constraint, and it is never owned by, or visible to, a user.
   EXTERNAL
+
+  /// The sandbox faucet's contra-account — synthetic value that never crossed a chain.
+  ///
+  /// Kept structurally separate from EXTERNAL rather than sharing it, because the two make
+  /// opposite promises. EXTERNAL asserts "this much really arrived and is really held
+  /// somewhere"; faucet money asserts the opposite. Posting both to EXTERNAL made custody
+  /// reconciliation weigh a sandbox's play balances against real on-chain holdings and report a
+  /// permanent multi-thousand-ETH shortfall — and an alarm that always fires is an alarm nobody
+  /// reads, which is worse than no alarm at all on the one check that would catch the platform
+  /// being unable to pay its users. (Found by running reconciliation against a live node.)
+  ///
+  /// Also negative by nature, and likewise exempt from the non-negative constraint. A live
+  /// deployment can never accumulate a balance here — the faucet refuses to run outside sandbox
+  /// (WalletService.faucet) — so a non-zero SANDBOX_MINT balance in production is itself a
+  /// finding.
+  SANDBOX_MINT
 }
 
 model LedgerAccount {
@@ -601,14 +627,25 @@ model Deposit {
   assetId             String
   asset               Asset         @relation(fields: [assetId], references: [id])
   txHash              String
+  /// Zero for native-asset transfers, which emit no log. Together with (chainId, txHash) this
+  /// is the natural key of an on-chain transfer and the basis of deposit idempotency.
+  logIndex            Int           @default(0)
+  blockNumber         BigInt
+  fromAddress         String?
+  toAddress           String
   amount              Decimal       @db.Decimal(36, 18)
+  confirmations       Int           @default(0)
   status              DepositStatus @default(DETECTED)
+  /// Set when the pending credit is posted; a second ledger transaction moves PENDING to
+  /// AVAILABLE once the chain's confirmation threshold is met.
   ledgerTransactionId String?
   idempotencyKey      String        @unique
   detectedAt          DateTime      @default(now())
   creditedAt          DateTime?
 
+  @@unique([chainId, txHash, logIndex])
   @@index([userId])
+  @@index([status])
   @@map("deposits")
 }
 

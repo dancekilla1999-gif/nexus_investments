@@ -1,11 +1,12 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ArrowDownToLine, ArrowUpFromLine, Wallet as WalletIcon } from 'lucide-react';
+import { ArrowUpFromLine, Wallet as WalletIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Amount } from '@/components/finance/amount';
+import { DepositPanel } from '@/components/wallet/deposit-panel';
 import { FaucetCard } from '@/components/wallet/faucet-card';
 import { TransferForm } from '@/components/wallet/transfer-form';
 import { api } from '@/lib/api-client';
@@ -84,20 +85,7 @@ export default function WalletPage() {
         </Card>
 
         <div className="space-y-4">
-          <Card>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ArrowDownToLine className="h-4 w-4 text-ink-muted" />
-                <span className="text-sm font-medium">Deposit</span>
-              </div>
-              <Badge tone="neutral">MVP2 — in progress</Badge>
-            </div>
-            <p className="text-sm text-ink-muted">
-              On-chain deposit addresses need the blockchain adapters and chain watchers. The
-              accounting they will post through is built and tested — the testnet faucet above
-              already uses that exact path.
-            </p>
-          </Card>
+          <DepositPanel />
 
           <Card>
             <div className="mb-3 flex items-center justify-between">

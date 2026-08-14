@@ -39,6 +39,23 @@ changes — the `wallet` and `ledger` modules only ever talk to the interface.
 
 ## 2. Deposit flow
 
+**Implemented** for EVM chains — `apps/api/src/deposits/`. Step 3's watcher is currently a
+single in-process interval (`DepositWatcherService`) rather than a BullMQ job; that is the
+honest amount of machinery for one API instance and is replaced by a queue when there is more
+than one, so two processes cannot scan the same range concurrently.
+
+Correctness does not depend on the watcher being careful. Deposits are idempotent on
+`(chainId, txHash, logIndex)` at the database level, so the watcher is free to overlap its
+windows, restart mid-range, or rewind after a reorg — none of which can double-credit anyone.
+The scan cursor starts at the chain head on first run rather than at genesis: a deposit that
+predates the platform knowing about an address is not a deposit, and replaying millions of
+blocks to discover that would be an expensive way to find nothing. The cursor only advances
+after a range is fully processed, so a crash mid-range rescans rather than skips.
+
+Address issuance takes a row lock on the chain's `nextDerivationIndex`. Two concurrent requests
+reading the same index would hand two users the *same* deposit address and make their funds
+indistinguishable on chain; serialising address creation is a cheap price for that.
+
 ```
 1. User requests a deposit address for (chainId, assetId)
 2. wallet module asks blockchain module for a deterministic address
@@ -91,11 +108,51 @@ by a DB-level constraint plus the ledger transaction itself, not just applicatio
 
 ## 5. Balance reconciliation
 
-A scheduled job (`blockchain` module) periodically compares each custody address's on-chain
-balance against the sum of `ledger_entries` attributable to it. A mismatch beyond a small,
-chain-specific dust tolerance raises a `risk_event` of type `RECONCILIATION_MISMATCH` and pages
-on-call — this is the concrete implementation of PRD §1's "ledger is truth, chain is verified
-against it," not just a slogan.
+**Implemented** — `CustodyReconciliationService` (`apps/api/src/deposits/`).
+
+The double-entry ledger guarantees the platform's books are internally consistent. It cannot
+guarantee the assets behind those books exist: a ledger can be perfectly balanced and completely
+wrong about reality. A bug that credits a transfer twice, a scanning error, an operator moving
+funds out of band, or an attacker with database access all produce a *balanced* ledger
+describing money that is not there. Reconciliation is the only check that closes that gap —
+this is the concrete implementation of PRD §1's "ledger is truth, chain is verified against it,"
+not a slogan — which is why a failure files a risk event rather than a log line.
+
+Per (chain, asset), on a schedule (`RECONCILIATION_INTERVAL_MS`, default 15 min) and on demand
+via `POST /wallet/deposits/reconcile` (RISK_OPS and above):
+
+```
+obligation = −(sum of EXTERNAL contra-account balances)   value that crossed the boundary inward
+custody    = Σ on-chain balance of every deposit address the platform controls
+```
+
+- **Shortfall** (custody < obligation): user balances are not fully backed.
+  `RECONCILIATION_MISMATCH` at severity 5.
+- **Surplus** (custody > obligation): funds held but not credited. Expected transiently — a
+  transfer that has landed but not yet been scanned sits here for one scan interval — but a
+  *persistent* surplus means deposits are arriving and not being credited, which from the
+  user's point of view is their money going missing. Severity 1.
+- Dust tolerance is one base unit: a guard against a single-wei artefact of a node reporting a
+  balance mid-block, not a rounding allowance, since the ledger rounds nothing.
+- A persistent mismatch stays **one** open event with refreshed details rather than one per
+  scan. An alarm that fires every minute is an alarm nobody reads.
+
+Two constraints found by running this against a live node, both now enforced in code:
+
+1. **The sandbox faucet must not debit `EXTERNAL`.** It mints synthetic value that never crossed
+   a chain, so booking it at the custody boundary made reconciliation demand real assets to back
+   play money and report a permanent multi-thousand-ETH shortfall. Faucet mints debit
+   `SANDBOX_MINT` — a separate contra-account, structurally incapable of being mistaken for
+   custody.
+2. **Only assets whose on-chain balance can actually be read are reconciled.** A token row with
+   no contract address would be queried as the *native* balance and reported under the token's
+   symbol — a phantom mismatch loud enough to bury a real one. That rule lives in
+   `src/deposits/creditable-assets.ts` and is shared with the watcher and the deposit UI so the
+   three cannot drift.
+
+**Scope:** funds sitting at deposit addresses. When sweeping to cold custody lands (MVP3), swept
+balances must be added to the custody side or every sweep will read as a shortfall; sweep
+destinations are tracked in `wallets` for exactly that reason.
 
 ## 6. Supported networks (v1)
 

@@ -112,12 +112,25 @@ describe('Wallet (e2e)', () => {
     const res = await request(server()).get('/api/v1/wallet/balances').set(auth()).expect(200);
     expect(bucket(res.body, LedgerAccountType.AVAILABLE)).toBe('250');
 
-    // The credit came from the platform boundary, not from nowhere.
-    const external = await prisma.balance.findFirstOrThrow({
+    // The credit came from a contra-account, not from nowhere.
+    const mint = await prisma.balance.findFirstOrThrow({
+      where: { userId: PLATFORM_SYSTEM_USER_ID, type: LedgerAccountType.SANDBOX_MINT, assetId },
+    });
+    expect(mint.amount.toString()).toBe('-250');
+    expect(await ledger.verifyReconciliation()).toEqual([]);
+  });
+
+  it('never books faucet money against the custody boundary', async () => {
+    // EXTERNAL asserts "this really crossed the platform boundary and is really held on chain".
+    // Play money booked there makes custody reconciliation demand real assets to back it, and a
+    // reconciliation alarm that always fires is one nobody reads — so the separation is a
+    // correctness property, not bookkeeping tidiness.
+    await fund('250');
+
+    const external = await prisma.balance.findFirst({
       where: { userId: PLATFORM_SYSTEM_USER_ID, type: LedgerAccountType.EXTERNAL, assetId },
     });
-    expect(external.amount.toString()).toBe('-250');
-    expect(await ledger.verifyReconciliation()).toEqual([]);
+    expect(external?.amount.toString() ?? '0').toBe('0');
   });
 
   it('moves funds between the user\'s own buckets', async () => {
