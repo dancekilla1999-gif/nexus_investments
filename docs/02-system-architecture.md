@@ -58,7 +58,13 @@ infra/
 | `wallet` | Deposit address issuance, withdrawal orchestration, balance sync | yes (via `blockchain`) | MVP2 |
 | `blockchain` | Chain adapters (see `06-blockchain-architecture.md`), abstraction layer | yes | MVP2 |
 | `ledger` | Double-entry ledger, balance types, immutable audit trail | no | MVP2 |
-| `trading` | Order management, matching/execution, positions | no | MVP4 |
+| `trading` | Order intent, positions — **routes to venues, does not match** (`docs/13`) | no | MVP4 |
+| `execution` | Smart Order Router, `ExecutionVenue` adapters, execution-quality measurement, venue↔ledger fill reconciliation | no (external venues) | MVP22 |
+| `investments` | Strategies/products, investor positions, unit register, subscriptions & redemptions at dealing points | no | MVP11–13 |
+| `nav` | NAV engine, immutable snapshots, mark sourcing | no | MVP15 |
+| `fees` | Management/performance accrual, high water mark, crystallisation — **the only code permitted to move value from a pool to the platform** | no | MVP16–17 |
+| `allocation` | Derived per-investor exposure, dealing-point flow netting, pro-rata wind-down | no | MVP14 |
+| `manager` | Manager terminal APIs: AUM, strategy capital, order entry within mandate | no | MVP18 |
 | `market-data` | Price/candle/order-book ingestion & normalization | no (external feeds) | MVP4 |
 | `p2p` | Ads, escrow, order lifecycle, disputes | no (settles via `ledger`) | MVP5 |
 | `signals` | Indicator engine, signal generation, performance stats | no | MVP6 |

@@ -32,6 +32,21 @@ reviewed against (see PRD §34/`09-roadmap.md` "after every stage" gate).
   admin action writes an `audit_logs` row with the acting admin's ID, never just the affected
   user's).
 
+### 2.1 Operator roles once investment management exists
+
+Roles are extended with `investment_manager`, `trader`, `finance` and `analyst`; the full matrix
+of what each may and may not do is `docs/12` §8. Two rules govern the whole set:
+
+- **No role — including `superadmin` — has a path to user or pool funds.** Being an
+  administrator confers *configuration* authority, never *economic* authority. The separation is
+  enforced by the ledger trigger described in `docs/03` §2, so it holds even against someone who
+  can change application code but not ship a migration unreviewed.
+- **Risk limits and fee schedules are dual-control**: proposed by one role, approved by another,
+  both recorded. A single compromised operator account cannot widen the limits it trades under.
+
+A `trader` is scoped to explicitly assigned strategies. Assignment is itself an audited,
+dual-controlled act — otherwise "who may trade this money" would be a self-service decision.
+
 ## 3. Secrets & key management
 
 - No secret (DB credentials, JWT signing key, provider API keys, chain RPC keys) is ever

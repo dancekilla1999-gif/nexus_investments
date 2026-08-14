@@ -36,6 +36,23 @@ bugs structurally caught, not just tested-for.
 | `funding` | Wallet-side balance not yet moved into trading |
 | `bonus` | Non-withdrawable promotional balance (own ledger account type, never mixed with real funds) |
 | `pending` | Deposit seen on-chain, awaiting required confirmations |
+| `pending_subscription` | Committed to an investment strategy but not yet at a dealing point — **still the user's**, and returned in full if cancelled (`docs/12` §2.2) |
+
+Plus the non-user **ownership domains** introduced by the Investment Management addendum
+(`docs/12` §1). These are not user buckets; they are what makes "whose money is this?" a
+question the ledger can actually answer:
+
+| Domain | Owner |
+|---|---|
+| `strategy_pool` | The investors of that strategy, collectively, pro rata by units |
+| `platform_treasury` | The platform |
+| `platform_revenue` | The platform (settled fees) |
+| `external`, `sandbox_mint` | Nobody — boundary contra-accounts |
+
+A database trigger forbids any ledger transaction that places a user or pool account on one side
+and a platform account on the other, unless its type is one of the named fee/settlement types
+whose amount comes from the fee engine. That trigger — not a service-layer check — is what makes
+"an administrator cannot take user funds" a property of the system rather than a promise.
 
 Modeled as a `ledger_account_type` enum × `balance_bucket` enum pair, not six separate columns
 — see schema. Moving funds between buckets (`Wallet → Trading`, `Trading → Wallet`,

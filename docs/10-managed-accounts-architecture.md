@@ -1,5 +1,23 @@
 # Managed Accounts (Investor / Discretionary Trading) Architecture
 
+> ## ⚠️ Partially superseded by `docs/12-investment-management-architecture.md`
+>
+> **§2 (segregated sub-accounts, not a pooled fund) no longer describes what is being built.**
+> The Investment Management addendum specifies a Master Strategy Account with NAV-per-unit
+> accounting and an allocation engine — that is a pooled fund, and pooling is incompatible with
+> the segregated model argued for below. `docs/12` §0.2 records the reversal and the regulatory
+> consequence it carries.
+>
+> **Still current and carried forward in full:**
+> - §3 — Risk Disclosure Agreement and consent (shipped and working today)
+> - §4 — the hard 10% max-drawdown cap, high-water-mark convention, and circuit breaker
+> - §7 — fees configurable, never hardcoded, disclosed before authorization
+> - the backtest-before-live gate in `docs/11`
+>
+> §2's regulatory analysis is kept rather than deleted: it is the reason `docs/12` states the
+> licensing exposure so plainly, and `Strategy.custodyModel = SEGREGATED_COPY` remains a
+> declared (unimplemented) variant for jurisdictions that forbid pooling.
+
 ## 0. What this feature is, in one sentence
 
 An investor deposits capital, explicitly consents in writing to a risk disclosure, and

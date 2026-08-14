@@ -231,39 +231,88 @@ compliance review gating `PLATFORM_MODE=live` per `01-PRD.md §8`.
 - Every jurisdiction the platform intends to operate in has a documented legal review outcome
   before it is enabled.
 
-## MVP11 — Managed Accounts & Backtest-Gated Algorithmic Trading — ⏳ designed
+## MVP11–MVP23 — Investment Management platform
 
-**Scope:** see `docs/10-managed-accounts-architecture.md` and
-`docs/11-backtesting-architecture.md` in full. In short: investors allocate capital to a
-segregated, consent-gated sub-account that a manager/validated strategy trades on their
-behalf, bounded by a hard 10%-of-capital max-drawdown circuit breaker; no strategy ever
-reaches a live Managed Account without a passing backtest, a paper-trading observation
-window, and (separately) a jurisdiction-specific legal review clearing discretionary trading
-specifically — a heavier bar than the base custodial-exchange review in `01-PRD.md §8`, not
-the same one.
+The addendum in `docs/12-investment-management-architecture.md` reshapes the platform into two
+first-class modes: **self trading** and **investment management**. Execution moves to a
+liquidity-aggregation model (`docs/13`), and the full money flow — investor deposit through real
+execution and back out to withdrawal — is specified posting-by-posting in `docs/14`.
 
-**Depends on:** MVP2 (Ledger), MVP4 (Trading), MVP6 (Signal/Indicator Engine) — this is a
-capstone feature, not something buildable in isolation from day one.
+**This supersedes the previous MVP11 (segregated Managed Accounts).** The structural reversal is
+documented at `docs/12` §0.2: the requested Master Strategy / NAV / allocation model is a pooled
+fund, which is incompatible with the segregated design doc 10 chose. What carries forward
+unchanged: the risk-disclosure consent flow (already shipped and working), the **hard 10% max
+drawdown ceiling**, and the **backtest-before-live gate** from `docs/11`.
 
-**Already shipped ahead of this milestone** (because the compliance precondition doesn't need
-to wait for the trading machinery): the full data model (§9 of `docs/10`) and a real, working
-`RiskDisclosureAgreement` / `RiskDisclosureAcceptance` flow — investors can read the current
-risk disclosure and record explicit, audit-logged acceptance today, via `/api/v1/legal/*` and
-the web app's Managed Accounts intro page. See the "Legal / risk disclosure" entry under MVP1
-above for what was verified.
+**Ordering principle:** NAV, units and the segregation invariant land *before* any manager can
+trade investor capital. Building the terminal first would mean trading money the books cannot
+yet correctly attribute.
 
-**Acceptance criteria (for the rest of the milestone):**
-- No `ManagedAccount` can reach `ACTIVE` status without a current, accepted
-  `RiskDisclosureAcceptance` for that investor — enforced server-side, tested by attempting to
-  bypass via direct API calls.
-- `maxDrawdownBps` is rejected above `1000` (10%) at every write path, not just the UI.
-- The circuit breaker fires correctly under a simulated drawdown-crossing test — no new
-  risk-increasing order can be placed on a `CIRCUIT_BROKEN` account, verified by attempting one.
-- No `TradingStrategy` can be assigned to a live Managed Account without a `BacktestResult`
-  clearing the documented promotion bar *and* a completed paper-trading window — tested by
-  attempting to skip each gate independently.
-- Fees are Admin Panel-configurable and shown to the investor before account authorization,
-  never hardcoded.
+### MVP11 — Investment Accounts
+Accounting entities (`USER_WALLET` / `STRATEGY_POOL` / `PLATFORM_TREASURY` / `PLATFORM_REVENUE`),
+the DB-level trigger forbidding any pool→platform crossing outside the named fee types,
+`InvestmentPosition`, unit register, and the `Σ units == totalUnits` invariant.
+*Acceptance:* a test attempts, via direct SQL, to move value from a pool to a platform account
+under a non-fee transaction type — and the database refuses it.
+
+### MVP12 — Investment Marketplace
+`Strategy` model with full configuration, publication workflow, marketplace UI, and disclosure
+of lock-up/redemption terms **before** the amount field. Forbidden-claims lint over user-facing
+strings. *Acceptance:* a strategy cannot reach `OPEN` without a passing backtest; publishing copy
+containing "guaranteed" is rejected.
+
+### MVP13 — Master Strategy Account
+Pool cash and positions, subscription/redemption at dealing points, `PENDING_SUBSCRIPTION`
+bucket. *Acceptance:* a subscription placed between two marks cannot capture P&L struck before
+it — the dilution test.
+
+### MVP14 — Allocation Engine
+Derived per-investor exposure, dealing-point flow netting, pro-rata wind-down.
+*Acceptance:* Σ derived exposures equals pool exposure exactly, at 10,000 positions.
+
+### MVP15 — NAV Engine
+Scheduled and event-driven revaluation, immutable `NavSnapshot`, sourced marks with provenance.
+*Acceptance:* no code path writes `navPerUnit` outside the engine; a manager-supplied price is
+rejected.
+
+### MVP16 — High Water Mark
+Per-position HWM as a unit price, ratchet-only. *Acceptance:* the docs/12 §6 table is a test —
+recovery to a previously-charged level accrues zero fee.
+
+### MVP17 — Management & Performance Fees
+Per-investor accrual, crystallisation by unit cancellation, investor-visible calculation
+breakdown. *Acceptance:* crystallising one investor's fee leaves every other investor's
+`navPerUnit` unchanged.
+
+### MVP18 — Manager Trading Terminal
+AUM overview, per-strategy capital, positions, order entry, SL/TP, exposure and risk panels.
+*Acceptance:* the terminal has no endpoint that accepts an arbitrary transfer; a trader assigned
+to strategy A cannot trade strategy B.
+
+### MVP19 — Risk Engine
+The full pre-trade pipeline for **both** modes, emergency controls, dual-control on limit
+changes. *Acceptance:* every check blocks an order that violates it, proven per check; the 10%
+circuit breaker fires under a simulated drawdown.
+
+### MVP20 — Investor Reporting
+Monthly/trade/performance/fee/transaction statements and tax export, generated from ledger and
+NAV snapshots. *Acceptance:* a regenerated historical statement is byte-identical to the one
+issued at the time.
+
+### MVP21 — Custody Integration
+Qualified custodian or institutional MPC. *Acceptance:* no private key material exists in
+PostgreSQL under any configuration; live mode refuses a dev signing provider.
+
+### MVP22 — Institutional Execution
+`ExecutionVenue` adapters, smart order routing, execution-quality measurement, venue↔ledger fill
+reconciliation. *Acceptance:* an unmatched venue fill halts trading on that venue and raises an
+incident.
+
+### MVP23 — Production Compliance
+KYC/AML, sanctions screening, investor eligibility and jurisdiction restrictions, suitability
+checks, investment agreements, consent records, and the licensing review that must clear before
+pooled investment management is offered to anyone. *Acceptance:* `PLATFORM_MODE=live` cannot be
+enabled for the investment module without a signed attestation naming the jurisdictions cleared.
 
 ---
 
