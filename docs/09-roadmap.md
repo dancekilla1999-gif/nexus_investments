@@ -403,14 +403,56 @@ which is exactly the confusion this milestone exists to prevent.
 not definitionally worth 1 USDC, and assuming so would overstate NAV during a depeg — precisely
 when the number matters most.
 
-### MVP16 — High Water Mark — ⏳ next
-Per-position HWM as a unit price, ratchet-only. *Acceptance:* the docs/12 §6 table is a test —
-recovery to a previously-charged level accrues zero fee.
+### MVP16 + MVP17 — High Water Mark, and the fees on top of it — ✅ done
+Built as one piece: an HWM with nothing accruing against it is half a feature, and the two share
+every test.
 
-### MVP17 — Management & Performance Fees
-Per-investor accrual, crystallisation by unit cancellation, investor-visible calculation
-breakdown. *Acceptance:* crystallising one investor's fee leaves every other investor's
-`navPerUnit` unchanged.
+*Acceptance — both met.* The **docs/12 §6.1 table runs as a test**, step for step: invest at
+1.00, gain to 1.20, crystallise (HWM ratchets to 1.20), fall to 1.10, recover to 1.20 — **zero
+accrued** — then gain to 1.25 and accrue on the 0.05 only. And crystallising one investor's fee
+leaves every other investor's `navPerUnit` **exactly** unchanged, asserted to 18 decimal places
+with a second investor in the pool.
+
+Four decisions carry the design:
+
+1. **The performance fee is marked to market, not summed.** Each run recomputes the target
+   liability and records the *delta*. Running the job twice must not charge twice, and the delta
+   can be negative — when NAV falls back, the un-earned accrual is released, as a new row, since
+   `fee_accruals` is append-only. Σ of the rows equals the accrued balance, so the audit trail
+   reconciles to the state.
+2. **Accruals are not ledger postings.** An accrual moves nothing. Posting it would drag every
+   *other* investor's `navPerUnit` down for a fee they do not owe.
+3. **Crystallisation is paid in units.** The payer's units are cancelled and the matching cash
+   leaves the pool, so `(N − f) / (U − fU/N) = N/U` — the unit price does not move for anyone
+   else. On a redemption the fee is instead carved out of the gross proceeds, which has the same
+   property and cancels no extra units.
+4. **The HWM ratchets only when the fee is actually paid.** A position the pool cannot fund is
+   skipped, not part-paid; ratcheting there would forfeit the investor's protection without the
+   platform collecting.
+
+The manager can accrue (bookkeeping) but **not** crystallise — that is ADMIN+, because the
+manager is the beneficiary of the charge. Neither endpoint accepts an amount. The redemption path
+now deducts the pro-rata accrued fee, as its own `FEE_CRYSTALLISATION` posting: the ownership
+boundary does not let `REDEMPTION_SETTLEMENT` cross to a platform account, and the trigger caught
+the first attempt to make it do so.
+
+*The bug this milestone found, and it is the significant one:* **`Prisma.Decimal` is capped at 20
+significant digits, and the cap applies to `plus` and `minus`, not only to multiply and divide.**
+A `Decimal(36, 18)` balance spends 18 digits after the point, so
+`10000.123456789012345678 + 1e-18` silently returns `10000.123456789012346` — three decimal
+places gone from a five-figure balance. This was **not** confined to the new code: the ledger's
+own "does this transaction balance?" check accumulated with `.add()`, `adjustTotalUnits` summed
+with `.plus()`, and every `Σ units == totalUnits` invariant was a chain of them. Fixed with
+`exactSum` / `exactDiff` / `exactNeg` in `ledger/amount.util.ts` (accumulate at 60 digits,
+quantise once) and swept across ledger, wallet, deposits, custody reconciliation, dealing,
+allocation, subscriptions and fees. `amount.util.spec.ts` pins each helper against the raw
+operator it replaces, so the failure mode stays visible.
+
+*Also found:* the e2e suites all truncate one shared Postgres database in `beforeEach` and Jest
+was running them in parallel, so they wiped each other — producing 143 misleading failures
+(unrelated 404s, phantom reconciliation mismatches). `maxWorkers: 1` is now pinned in
+`jest-e2e.json` rather than passed on the command line, so a green run means something however
+the suite is invoked.
 
 ### MVP18 — Manager Trading Terminal
 AUM overview, per-strategy capital, positions, order entry, SL/TP, exposure and risk panels.

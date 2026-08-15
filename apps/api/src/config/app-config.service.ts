@@ -142,4 +142,14 @@ export class AppConfigService {
   get navRevaluationEnabled() {
     return this.config.get('NAV_REVALUATION_DISABLED', { infer: true }) !== '1';
   }
+
+  // ── Fee engine ──────────────────────────────────────────────────────────
+
+  get feeAccrualIntervalMs() {
+    return this.config.get('FEE_ACCRUAL_INTERVAL_MS', { infer: true });
+  }
+
+  get feeAccrualEnabled() {
+    return this.config.get('FEE_ACCRUAL_DISABLED', { infer: true }) !== '1';
+  }
 }

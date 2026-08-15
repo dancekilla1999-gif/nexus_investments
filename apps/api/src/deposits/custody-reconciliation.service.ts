@@ -3,7 +3,7 @@ import { LedgerAccountType, Prisma, RiskEventType } from '@prisma/client';
 import { BlockchainRegistry } from '../blockchain/blockchain.registry';
 import { AppConfigService } from '../config/app-config.service';
 import { creditableAssetsOnChain } from './creditable-assets';
-import { formatAmount } from '../ledger/amount.util';
+import { exactDiff, exactNeg, formatAmount } from '../ledger/amount.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -118,7 +118,7 @@ export class CustodyReconciliationService implements OnApplicationBootstrap, OnM
         new Prisma.Decimal(10).pow(asset.decimals),
       );
 
-      const difference = custody.minus(obligation);
+      const difference = exactDiff(custody, obligation);
       const report: ReconciliationReport = {
         chainKey,
         assetSymbol: asset.symbol,
@@ -167,7 +167,7 @@ export class CustodyReconciliationService implements OnApplicationBootstrap, OnM
       _sum: { amount: true },
     });
     // No boundary account means nothing has ever crossed in for this asset: obligation zero.
-    return (total._sum.amount ?? new Prisma.Decimal(0)).negated();
+    return exactNeg(total._sum.amount ?? new Prisma.Decimal(0));
   }
 
   /**

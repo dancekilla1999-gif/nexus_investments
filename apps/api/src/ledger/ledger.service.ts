@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { LedgerAccountType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { formatAmount } from './amount.util';
+import { exactSum, formatAmount } from './amount.util';
 import {
   BalanceView,
   PostTransactionInput,
@@ -87,7 +87,7 @@ export class LedgerService {
         input.legs.forEach((leg, i) => {
           const accountId = accountIds[i];
           const previous = deltaByAccount.get(accountId) ?? new Prisma.Decimal(0);
-          deltaByAccount.set(accountId, previous.add(new Prisma.Decimal(leg.amount)));
+          deltaByAccount.set(accountId, exactSum(previous, leg.amount));
         });
 
         for (const [accountId, delta] of deltaByAccount) {
@@ -97,7 +97,7 @@ export class LedgerService {
           if (contraAccountIds.has(accountId)) continue;
 
           const current = currentByAccount.get(accountId) ?? new Prisma.Decimal(0);
-          const next = current.add(delta);
+          const next = exactSum(current, delta);
           if (next.isNegative()) {
             throw new BadRequestException({
               code: 'INSUFFICIENT_BALANCE',
@@ -126,7 +126,7 @@ export class LedgerService {
           const current = currentByAccount.get(accountId) ?? new Prisma.Decimal(0);
           await tx.balance.update({
             where: { ledgerAccountId: accountId },
-            data: { amount: current.add(delta) },
+            data: { amount: exactSum(current, delta) },
           });
         }
 
@@ -173,7 +173,7 @@ export class LedgerService {
         });
       }
       const running = totalByAsset.get(leg.assetId) ?? new Prisma.Decimal(0);
-      totalByAsset.set(leg.assetId, running.add(amount));
+      totalByAsset.set(leg.assetId, exactSum(running, amount));
     }
 
     for (const [assetId, total] of totalByAsset) {

@@ -10,7 +10,7 @@ import {
   SubscriptionRequestStatus,
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
-import { formatAmount } from '../ledger/amount.util';
+import { exactDiff, exactNeg, exactSum, formatAmount } from '../ledger/amount.util';
 import { PLATFORM_SYSTEM_USER_ID } from '../ledger/ledger.constants';
 import { LedgerService } from '../ledger/ledger.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -118,7 +118,7 @@ export class AllocationService {
     // cash-only pool and is replaced by real marks when the NAV engine lands.
     const totalPoolValue = holdings
       .filter((h) => h.assetId === strategy.baseAssetId)
-      .reduce((acc, h) => acc.plus(h.amount), new Prisma.Decimal(0));
+      .reduce<Prisma.Decimal>((acc, h) => exactSum(acc, h.amount), new Prisma.Decimal(0));
 
     for (const holding of holdings) {
       const split = apportion(holding.amount, weights, holding.asset.decimals);
@@ -191,18 +191,21 @@ export class AllocationService {
     const impliedNavPerUnit = strategy.totalUnits.isZero()
       ? new Prisma.Decimal(1)
       : poolCash.dividedBy(strategy.totalUnits);
-    const redemptionUnits = dueRedemptions.reduce((acc, r) => acc.plus(r.units), new Prisma.Decimal(0));
+    const redemptionUnits = dueRedemptions.reduce<Prisma.Decimal>(
+      (acc, r) => exactSum(acc, r.units),
+      new Prisma.Decimal(0),
+    );
     const redemptionsOut = redemptionUnits.times(impliedNavPerUnit);
 
     const subscriptionsIn = subscriptions._sum.amount ?? new Prisma.Decimal(0);
-    const net = subscriptionsIn.minus(redemptionsOut);
+    const net = exactDiff(subscriptionsIn, redemptionsOut);
 
     // Subscription cash is not in the pool yet, so it cannot fund a redemption at the same
     // dealing point unless it settles first — which it does (docs/12 §7). Counting it here is
     // therefore correct, and counting it *twice* would understate the shortfall.
-    const availableAfterSubscriptions = poolCash.plus(subscriptionsIn);
+    const availableAfterSubscriptions = exactSum(poolCash, subscriptionsIn);
     const shortfall = redemptionsOut.greaterThan(availableAfterSubscriptions)
-      ? redemptionsOut.minus(availableAfterSubscriptions)
+      ? exactDiff(redemptionsOut, availableAfterSubscriptions)
       : new Prisma.Decimal(0);
 
     return {
@@ -305,7 +308,7 @@ export class AllocationService {
               assetId: strategy.baseAssetId,
               type: LedgerAccountType.STRATEGY_POOL,
               strategyId,
-              amount: amount.negated(),
+              amount: exactNeg(amount),
             },
             {
               userId: position.userId,

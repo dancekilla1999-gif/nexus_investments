@@ -1474,6 +1474,11 @@ model InvestmentPosition {
   lockedUntil DateTime?
   createdAt   DateTime  @default(now())
 
+  /// End of the last period fees were accrued for. The next accrual starts here, so a job that
+  /// runs twice in a day charges for one day, not two — and a job that misses a day still
+  /// charges for it when it next runs.
+  lastAccruedAt DateTime?
+
   feeAccruals FeeAccrual[]
 
   @@unique([userId, strategyId])

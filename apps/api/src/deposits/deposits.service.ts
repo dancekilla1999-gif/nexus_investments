@@ -13,7 +13,7 @@ import { BlockchainRegistry } from '../blockchain/blockchain.registry';
 import { creditableAssetsOnChain } from './creditable-assets';
 import { PLATFORM_SYSTEM_USER_ID } from '../ledger/ledger.constants';
 import { LedgerService } from '../ledger/ledger.service';
-import { formatAmount } from '../ledger/amount.util';
+import { exactNeg, formatAmount } from '../ledger/amount.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -234,7 +234,7 @@ export class DepositsService {
             userId: PLATFORM_SYSTEM_USER_ID,
             assetId: asset.id,
             type: LedgerAccountType.EXTERNAL,
-            amount: amount.negated(),
+            amount: exactNeg(amount),
           },
           {
             userId: walletAddress.userId,
@@ -315,7 +315,7 @@ export class DepositsService {
             userId: deposit.userId,
             assetId: deposit.assetId,
             type: LedgerAccountType.PENDING,
-            amount: deposit.amount.negated(),
+            amount: exactNeg(deposit.amount),
           },
           {
             userId: deposit.userId,

@@ -7,6 +7,7 @@ import { JwtPayload } from '../common/types/authenticated-request';
 import { CreateStrategyDto } from './dto/create-strategy.dto';
 import { StrikeDealingPointDto } from './dto/subscribe.dto';
 import { DealingService } from './dealing.service';
+import { FeesService } from './fees.service';
 import { AllocationService } from './allocation.service';
 import { SetStrategyStatusDto } from './dto/set-status.dto';
 import { UpdateStrategyDto } from './dto/update-strategy.dto';
@@ -28,6 +29,7 @@ export class AdminInvestmentsController {
     private readonly strategies: InvestmentStrategiesService,
     private readonly dealing: DealingService,
     private readonly allocation: AllocationService,
+    private readonly fees: FeesService,
   ) {}
 
   @Get()
@@ -67,6 +69,31 @@ export class AdminInvestmentsController {
     @Body() dto: StrikeDealingPointDto,
   ) {
     return this.dealing.strikeDealingPoint(id, dto.reason, user.sub);
+  }
+
+  /**
+   * Bring fee accruals up to the current valuation without charging anything.
+   *
+   * Takes no amount: the charge is `max(0, navPerUnit − hwm) × units × rate`, computed from a
+   * NAV the manager cannot influence and a rate stored on the strategy. There is no parameter
+   * here through which a number could be typed.
+   */
+  @Post(':id/accrue-fees')
+  @ApiOperation({ summary: 'Mark fee accruals to the current NAV (no money moves)' })
+  accrueFees(@Param('id') id: string) {
+    return this.fees.accrue(id);
+  }
+
+  /**
+   * Settle what has accrued: units cancelled, cash to platform revenue, high water mark
+   * ratcheted. Restricted above INVESTMENT_MANAGER — accruing is bookkeeping, but crystallising
+   * is the moment investor money becomes platform money, and the manager is its beneficiary.
+   */
+  @Post(':id/crystallise-fees')
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
+  @ApiOperation({ summary: 'Charge accrued fees and ratchet each high water mark' })
+  crystalliseFees(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.fees.crystallise(id, user.sub);
   }
 
   /**

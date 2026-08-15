@@ -1,5 +1,91 @@
 # Changelog
 
+## MVP16 + MVP17 — High Water Mark, and the fees on top of it
+
+**Date:** 2026-08-15
+
+Built as one piece. An HWM with nothing accruing against it is half a feature, and under the
+platform's **50/50 profit share** the most expensive bug available is charging twice for the same
+performance — so the mark and the accrual are tested together or not meaningfully at all.
+
+### The docs/12 §6.1 table runs as a test
+
+Step for step, as written: invest at 1.00 → gain to 1.20 → accrue 50% of the gain →
+crystallise (HWM ratchets to 1.20) → fall to 1.10, **nothing** → recover to 1.20, **still
+nothing, it has already been paid for** → gain to 1.25, accrue on the 0.05 only.
+
+### Four decisions, each of them load-bearing
+
+**The performance fee is marked to market, not summed.** Every run recomputes the target
+liability — `max(0, navPerUnit − hwm) × units × rate` — and records the *delta* from what is
+already accrued. Adding a fresh charge per run would bill an investor twice for one gain simply
+because the job ran twice. The delta can be negative: when NAV falls back, the un-earned accrual
+is released as a **new row**, never an edit, because `fee_accruals` is append-only. Σ of the rows
+equals the accrued balance, so the audit trail reconciles to the state.
+
+**Accruals are not ledger postings.** An accrual moves nothing; it is a liability estimate.
+Posting it would drag every *other* investor's `navPerUnit` down for a fee they do not owe.
+
+**Crystallisation is paid in units, not in someone else's money.** The payer's units are
+cancelled and the matching cash leaves the pool:
+
+    (N − f) / (U − f·U/N)  =  (N − f) / (U(N − f)/N)  =  N/U
+
+so the unit price does not move for anyone else — asserted to 18 decimal places with a second
+investor in the pool. On a redemption the fee is instead carved out of the gross the pool pays
+out anyway, which has the same property and cancels no extra units.
+
+**The HWM ratchets only when the fee is actually paid.** A position the pool cannot fund is
+skipped, not part-paid. Ratcheting there would forfeit the investor's protection without the
+platform ever collecting. Tested with a pool that is genuinely up but illiquid — the gain sitting
+in WBTC with 100 USDC on hand.
+
+### Authority
+
+The manager may accrue; only ADMIN+ may crystallise, because the manager is the beneficiary of
+the charge. Neither endpoint accepts an amount — there is no parameter through which a number
+could be typed. The redemption fee posts as its own `FEE_CRYSTALLISATION`: the ownership boundary
+trigger does not let `REDEMPTION_SETTLEMENT` cross to a platform account, and it caught the first
+attempt to make it do so. Left alone, "a redemption" would have become a general-purpose way to
+move investor money to the platform.
+
+### What an investor can see
+
+`GET /investments/me/positions/:slug/fees` returns the terms in words, the current high water
+mark, and every accrual with its period, rate, base, HWM and result — enough to recompute any
+charge rather than trust it. Releases are labelled as releases, not hidden.
+
+### The bug this milestone found
+
+**`Prisma.Decimal` is capped at 20 significant digits, and the cap applies to `plus` and `minus`,
+not only to multiply and divide.** A `Decimal(36, 18)` balance spends 18 digits after the point,
+so a five-figure balance is already over the line:
+
+    new Decimal('10000.123456789012345678').plus('0.000000000000000001')
+      → 10000.123456789012346          // three decimal places gone, silently
+
+This was **not** confined to the new code. The ledger's own "does this transaction balance?"
+check accumulated with `.add()`; `adjustTotalUnits` summed with `.plus()`; every
+`Σ units == totalUnits` invariant in the system was a chain of them. Fixed with `exactSum` /
+`exactDiff` / `exactNeg` in `ledger/amount.util.ts` — accumulate at 60 digits, quantise once —
+and swept across ledger, wallet, deposits, custody reconciliation, dealing, allocation,
+subscriptions and fees. `amount.util.spec.ts` pins each helper against the raw operator it
+replaces, so the failure mode stays visible in the file rather than described in a comment.
+
+### Also fixed
+
+- The e2e suites all truncate one shared Postgres database in `beforeEach`, and Jest was running
+  them in parallel — so they wiped each other, producing 143 misleading failures (unrelated 404s,
+  phantom reconciliation mismatches). `maxWorkers: 1` is now pinned in `jest-e2e.json` rather than
+  passed on the command line, so a green run means something however the suite is invoked.
+- The crystallisation response returned raw `Prisma.Decimal` objects, which serialise as
+  `{"d":[10000],"e":4,"s":1}`. Amounts now leave the service as strings, like everywhere else.
+- `investment_positions.lastAccruedAt` (migration `20260814240000_fee_accrual_watermark`) makes
+  accrual resumable and exactly-once over time: a job that runs twice in a day charges for one
+  day, and a job that misses a day still charges for it when it next runs. Both are tested.
+
+**Tests:** 135 unit + 205 e2e = **340 passing**, against real PostgreSQL and Redis.
+
 ## MVP15 — NAV Engine
 
 **Date:** 2026-08-14

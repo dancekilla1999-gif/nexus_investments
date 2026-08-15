@@ -10,6 +10,7 @@ import { BalanceView } from '../ledger/ledger.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { FaucetDto } from './dto/faucet.dto';
 import { InternalTransferDto, USER_TRANSFERABLE_BUCKETS } from './dto/internal-transfer.dto';
+import { exactNeg } from '../ledger/amount.util';
 
 @Injectable()
 export class WalletService {
@@ -60,7 +61,7 @@ export class WalletService {
       referenceType: 'InternalTransfer',
       referenceId: userId,
       legs: [
-        { userId, assetId: dto.assetId, type: dto.from, amount: amount.negated() },
+        { userId, assetId: dto.assetId, type: dto.from, amount: exactNeg(amount) },
         { userId, assetId: dto.assetId, type: dto.to, amount },
       ],
     });
@@ -127,7 +128,7 @@ export class WalletService {
           // real on-chain holdings have to back, and faucet credits there make it report a
           // permanent shortfall that drowns out a genuine one.
           type: LedgerAccountType.SANDBOX_MINT,
-          amount: amount.negated(),
+          amount: exactNeg(amount),
         },
         { userId, assetId: dto.assetId, type: LedgerAccountType.AVAILABLE, amount },
       ],

@@ -14,6 +14,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 import { DealingService } from '../src/investments/dealing.service';
+import { exactSum } from '../src/ledger/amount.util';
 import { PLATFORM_SYSTEM_USER_EMAIL, PLATFORM_SYSTEM_USER_ID } from '../src/ledger/ledger.constants';
 import { LedgerService } from '../src/ledger/ledger.service';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -395,7 +396,10 @@ describe('Investment dealing (e2e)', () => {
       await strike();
 
       const positions = await prisma.investmentPosition.findMany({ where: { strategyId } });
-      const sum = positions.reduce((acc, p) => acc.plus(p.units), new Prisma.Decimal(0));
+      // Summed exactly. A plain `.plus()` chain rounds to Decimal.js's 20 significant digits,
+      // so at 18 stored decimal places this assertion would fail on the test's own arithmetic
+      // rather than on the register it is checking.
+      const sum = exactSum(...positions.map((p) => p.units));
       const strategy = await prisma.investmentStrategy.findUniqueOrThrow({ where: { id: strategyId } });
       expect(sum.toFixed(18)).toBe(strategy.totalUnits.toFixed(18));
     });
@@ -507,8 +511,10 @@ describe('Investment dealing (e2e)', () => {
       const result = await strike();
       expect(result.redemptionsSettled).toBe(1);
 
-      // 1000 units at 2.00 = 2000 back into the wallet, on top of the 19,000 left unspent.
-      expect(await balanceOf(alice.id, LedgerAccountType.AVAILABLE)).toBe('21000.00');
+      // 1000 units at 2.00 is 2000 gross. The pool doubled, so half of the 1000 gain is the
+      // manager's under the 50/50 profit share: 500 to platform revenue, 1500 to the investor,
+      // on top of the 19,000 left unspent.
+      expect(await balanceOf(alice.id, LedgerAccountType.AVAILABLE)).toBe('20500.00');
       const position = await positionOf(alice.id);
       expect(position?.units.toFixed(2)).toBe('0.00');
 
@@ -637,8 +643,10 @@ describe('Investment dealing (e2e)', () => {
         costBasis: '1000',
         navPerUnit: '1.5',
         grossValue: '1500',
-        netValue: '1500',
-        pnl: '500',
+        // Net of the accrued performance fee — half the 500 gain. Net is the number the
+        // investor actually gets, so it is the one the dashboard leads with (docs/12 §6.0).
+        netValue: '1250',
+        pnl: '250',
         perfFeeBps: 5000,
       });
     });

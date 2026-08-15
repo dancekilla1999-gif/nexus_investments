@@ -81,6 +81,16 @@ export const envSchema = z.object({
   /** Set to '1' to keep scheduled revaluation from starting (tests drive it manually). */
   NAV_REVALUATION_DISABLED: z.string().optional(),
 
+  // ── Fee engine (MVP16/17) ──
+  /**
+   * How often fees are accrued. The interval deliberately does not appear in the arithmetic:
+   * each position carries the end of the period it was last charged for, so running more or
+   * less often than planned changes *when* a charge is computed, never how much it is.
+   */
+  FEE_ACCRUAL_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+  /** Set to '1' to keep scheduled accrual from starting (tests drive it manually). */
+  FEE_ACCRUAL_DISABLED: z.string().optional(),
+
   NOTIFICATIONS_EMAIL_PROVIDER: z.enum(['console', 'resend', 'ses']).default('console'),
 });
 

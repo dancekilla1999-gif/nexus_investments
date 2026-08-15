@@ -9,34 +9,14 @@ import {
   SubscriptionRequestStatus,
 } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
-import { formatAmount } from '../ledger/amount.util';
+import { exactDiff, exactNeg, exactSum, formatAmount, quantize } from '../ledger/amount.util';
 import { PLATFORM_SYSTEM_USER_ID } from '../ledger/ledger.constants';
 import { LedgerService } from '../ledger/ledger.service';
 import { NavService } from '../nav/nav.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
-
-/** The scale the database stores money and units at — `Decimal(36, 18)`. */
-const STORED_DP = 18;
-
-/**
- * Rounds to the precision the database actually stores, **downward**, before a value is used
- * anywhere.
- *
- * Two reasons, and the first is a bug this codebase already had. Decimal.js keeps ~20
- * significant digits, so `400 / 1.2` is a repeating decimal that gets rounded once when a
- * position row is written and *again*, differently, when the same value is added into
- * `totalUnits` — Postgres rounds the accumulated sum, not each addend. The two disagree by
- * ~1e-17 per deal, `Σ units == totalUnits` stops holding, and every per-investor figure derived
- * from it is quietly wrong. Quantising once, here, means both sides store the identical number.
- *
- * Downward specifically: issuing *more* units than the money paid for dilutes every existing
- * holder, and paying out more than a claim is worth takes it from the ones who stay. Rounding
- * down leaves a sub-wei residue in the pool, which is the only direction that harms nobody.
- */
-function quantize(value: Prisma.Decimal): Prisma.Decimal {
-  return value.toDecimalPlaces(STORED_DP, Prisma.Decimal.ROUND_DOWN);
-}
+import { FeesService } from './fees.service';
+import { adjustTotalUnits } from './units.util';
 
 export interface DealingPointResult {
   snapshotId: string;
@@ -75,6 +55,7 @@ export class DealingService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly nav: NavService,
+    private readonly fees: FeesService,
   ) {}
 
   /**
@@ -124,10 +105,17 @@ export class DealingService {
       });
     }
 
-    // ── 2. Subscriptions, at the price struck above ──
+    // ── 2. Bring fee accruals up to the price just struck ──
+    // Before any units move, and at this exact price. A redeeming investor's fee and their
+    // redemption proceeds must be measured off one number; accruing afterwards would price the
+    // fee against a position that has already been partly cancelled. Accruing before
+    // subscriptions also keeps a brand-new position out of it — it has no period to charge for.
+    await this.fees.accrueAtPrice(strategy, navPerUnit);
+
+    // ── 3. Subscriptions, at the price struck above ──
     const subscriptionsSettled = await this.settleSubscriptions(strategy, snapshot.id, navPerUnit);
 
-    // ── 3. Redemptions, at the same price ──
+    // ── 4. Redemptions, at the same price, net of the fee accrued above ──
     const { settled: redemptionsSettled, queued: redemptionsQueued } = await this.settleRedemptions(
       strategy,
       snapshot.id,
@@ -194,7 +182,7 @@ export class DealingService {
             userId: request.userId,
             assetId: strategy.baseAssetId,
             type: LedgerAccountType.PENDING_SUBSCRIPTION,
-            amount: request.amount.negated(),
+            amount: exactNeg(request.amount),
           },
           {
             userId: PLATFORM_SYSTEM_USER_ID,
@@ -222,8 +210,8 @@ export class DealingService {
           await tx.investmentPosition.update({
             where: { id: existing.id },
             data: {
-              units: existing.units.plus(units),
-              costBasis: existing.costBasis.plus(request.amount),
+              units: exactSum(existing.units, units),
+              costBasis: exactSum(existing.costBasis, request.amount),
               // A top-up must not reset the high water mark downward — that would re-charge
               // performance the investor has already paid for. Keep the higher of the two.
               hwmUnitPrice: existing.hwmUnitPrice.greaterThan(navPerUnit)
@@ -249,7 +237,7 @@ export class DealingService {
           });
         }
 
-        await this.adjustTotalUnits(tx, strategy.id, units);
+        await adjustTotalUnits(tx, strategy.id, units);
 
         await tx.subscriptionRequest.update({
           where: { id: request.id },
@@ -296,13 +284,22 @@ export class DealingService {
     for (const request of due) {
       const gross = quantize(request.units.times(navPerUnit));
 
-      // Fees are MVP17; until the fee engine exists there is nothing accrued to deduct, and
-      // pretending otherwise would misreport what the investor receives.
-      const fees = new Prisma.Decimal(0);
-      const net = gross.minus(fees);
+      const position = await this.prisma.investmentPosition.findUnique({
+        where: { userId_strategyId: { userId: request.userId, strategyId: strategy.id } },
+      });
+      if (!position) {
+        // A redemption with no position behind it cannot be priced against anything. Skipping is
+        // the only honest response; paying it would be creating a claim from nowhere.
+        this.logger.error(`Redemption ${request.id} has no position; skipping.`);
+        continue;
+      }
 
+      // The whole gross amount has to leave the pool — the fee is carved out of it, not charged
+      // on top — so the cash check is against gross, and it happens before a single posting.
+      // Taking the fee and then discovering the payout cannot be funded would leave the investor
+      // charged for a redemption that never settled.
       const poolCash = await this.poolCash(strategy.id, strategy.baseAssetId);
-      if (poolCash.lessThan(net)) {
+      if (poolCash.lessThan(gross)) {
         // Queued, not part-paid and not covered from platform funds. Paying an investor out of
         // the platform's own money would convert a pool shortfall into a hidden platform loss
         // and disguise the real problem (docs/14 step 8).
@@ -313,12 +310,26 @@ export class DealingService {
           });
           this.logger.warn(
             `Redemption ${request.id} queued: pool holds ${formatAmount(poolCash)} ${strategy.baseAsset.symbol}, ` +
-              `needs ${formatAmount(net)}. The manager must raise cash.`,
+              `needs ${formatAmount(gross)}. The manager must raise cash.`,
           );
         }
         queued++;
         continue;
       }
+
+      // Settled as its own FEE_CRYSTALLISATION posting rather than as a third leg on the
+      // redemption. The ledger's ownership boundary permits only a named set of transaction
+      // types to move value between investor-owned and platform-owned accounts, and
+      // REDEMPTION_SETTLEMENT is deliberately not one of them — if it were, "a redemption"
+      // would be a general-purpose way to move investor money to the platform (docs/12 §1.1).
+      const { fee: fees } = await this.fees.settleRedemptionFee({
+        positionId: position.id,
+        strategy,
+        unitsRedeemed: request.units,
+        navPerUnit,
+        redemptionId: request.id,
+      });
+      const net = exactDiff(gross, fees);
 
       await this.ledger.post({
         type: LedgerTransactionType.REDEMPTION_SETTLEMENT,
@@ -332,7 +343,7 @@ export class DealingService {
             assetId: strategy.baseAssetId,
             type: LedgerAccountType.STRATEGY_POOL,
             strategyId: strategy.id,
-            amount: net.negated(),
+            amount: exactNeg(net),
           },
           {
             userId: request.userId,
@@ -356,12 +367,12 @@ export class DealingService {
         await tx.investmentPosition.update({
           where: { id: position.id },
           data: {
-            units: position.units.minus(request.units),
-            costBasis: position.costBasis.minus(basisReturned),
+            units: exactDiff(position.units, request.units),
+            costBasis: exactDiff(position.costBasis, basisReturned),
           },
         });
 
-        await this.adjustTotalUnits(tx, strategy.id, request.units.negated());
+        await adjustTotalUnits(tx, strategy.id, exactNeg(request.units));
 
         await tx.redemptionRequest.update({
           where: { id: request.id },
@@ -387,32 +398,6 @@ export class DealingService {
     }
 
     return { settled, queued };
-  }
-
-  /**
-   * Moves `totalUnits` by an exact Decimal delta, under a row lock.
-   *
-   * Deliberately not Prisma's `{ increment }`: that hands the arithmetic to the driver, which
-   * does not preserve full decimal precision, so `Σ position.units` and `strategy.totalUnits`
-   * drifted apart by ~1e-17 on any deal whose unit price does not divide evenly. Doing the
-   * addition here, in Decimal, means both sides store the identical number by construction.
-   *
-   * The `FOR UPDATE` lock serialises concurrent settlements against the same strategy — a
-   * read-modify-write on a shared counter is exactly the shape that silently loses updates.
-   */
-  private async adjustTotalUnits(
-    tx: Prisma.TransactionClient,
-    strategyId: string,
-    delta: Prisma.Decimal,
-  ): Promise<void> {
-    const [locked] = await tx.$queryRaw<Array<{ totalUnits: Prisma.Decimal }>>`
-      SELECT "totalUnits" FROM investment_strategies WHERE id = ${strategyId} FOR UPDATE
-    `;
-    const next = new Prisma.Decimal(locked.totalUnits).plus(delta);
-    await tx.investmentStrategy.update({
-      where: { id: strategyId },
-      data: { totalUnits: next },
-    });
   }
 
   private async poolCash(strategyId: string, assetId: string): Promise<Prisma.Decimal> {

@@ -95,10 +95,15 @@ Violating any of these is a defect regardless of what a ticket says.
    deterministic lock order. Never read a balance, decide, then write.
 9. **Never use ORM `{ increment }` on a Decimal column** — it does not preserve precision. Read
    under lock, compute in Decimal, write.
-10. **Decimal.js keeps 20 significant digits by default, and that has caused three separate bugs
-    here.** Any money arithmetic that accumulates over many terms, or multiplies before dividing,
-    must use an explicit high-precision constructor (`Prisma.Decimal.clone({ precision: 60 })`).
-    The default silently truncates an intermediate and the result looks plausible.
+10. **Never add, subtract or negate money with the raw `Prisma.Decimal` operators.** Use
+    `exactSum` / `exactDiff` / `exactNeg` from `ledger/amount.util.ts`. Decimal.js is capped at
+    **20 significant digits** and the cap applies to `plus`/`minus`, not only to multiply and
+    divide — a `Decimal(36, 18)` balance spends 18 digits after the point, so anything from 100
+    upward already loses real stored digits, silently. This has caused **four** separate bugs
+    here, the last being `Σ units == totalUnits` drifting apart on an ordinary fee
+    crystallisation. For anything that multiplies before dividing, also use an explicit
+    high-precision constructor (`Prisma.Decimal.clone({ precision: 60 })`) and quantise once at
+    the end.
 11. **A split must sum to the whole.** Use `apportion` (largest-remainder), never per-share
     rounding — parts that do not add up mean value shown to nobody or to two people at once.
 

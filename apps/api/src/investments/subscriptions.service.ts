@@ -17,7 +17,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
-import { formatAmount } from '../ledger/amount.util';
+import { exactDiff, exactNeg, exactSum, formatAmount } from '../ledger/amount.util';
 import { LedgerService } from '../ledger/ledger.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -92,7 +92,7 @@ export class SubscriptionsService {
         where: { userId_strategyId: { userId, strategyId: strategy.id } },
       });
       const pendingTotal = await this.pendingSubscriptionTotal(userId, strategy.id);
-      const committed = (position?.costBasis ?? new Prisma.Decimal(0)).plus(pendingTotal).plus(value);
+      const committed = exactSum(position?.costBasis ?? new Prisma.Decimal(0), pendingTotal, value);
       if (committed.greaterThan(strategy.maximumInvestment)) {
         throw new BadRequestException({
           code: 'ABOVE_MAXIMUM',
@@ -128,7 +128,7 @@ export class SubscriptionsService {
         referenceType: 'SubscriptionRequest',
         referenceId: request.id,
         legs: [
-          { userId, assetId: strategy.baseAssetId, type: LedgerAccountType.AVAILABLE, amount: value.negated() },
+          { userId, assetId: strategy.baseAssetId, type: LedgerAccountType.AVAILABLE, amount: exactNeg(value) },
           { userId, assetId: strategy.baseAssetId, type: LedgerAccountType.PENDING_SUBSCRIPTION, amount: value },
         ],
       });
@@ -183,7 +183,7 @@ export class SubscriptionsService {
           userId,
           assetId: request.strategy.baseAssetId,
           type: LedgerAccountType.PENDING_SUBSCRIPTION,
-          amount: request.amount.negated(),
+          amount: exactNeg(request.amount),
         },
         {
           userId,
@@ -243,7 +243,7 @@ export class SubscriptionsService {
     }
 
     const alreadyRequested = await this.pendingRedemptionUnits(userId, strategy.id);
-    if (requested.plus(alreadyRequested).greaterThan(position.units)) {
+    if (exactSum(requested, alreadyRequested).greaterThan(position.units)) {
       throw new BadRequestException({
         code: 'INSUFFICIENT_UNITS',
         message: `You hold ${formatAmount(position.units)} units${
@@ -313,8 +313,8 @@ export class SubscriptionsService {
 
         const navPerUnit = latest?.navPerUnit ?? null;
         const gross = navPerUnit ? position.units.times(navPerUnit) : null;
-        const accrued = position.accruedMgmtFee.plus(position.accruedPerfFee);
-        const net = gross ? gross.minus(accrued) : null;
+        const accrued = exactSum(position.accruedMgmtFee, position.accruedPerfFee);
+        const net = gross ? exactDiff(gross, accrued) : null;
 
         return {
           strategySlug: position.strategy.slug,
@@ -331,7 +331,7 @@ export class SubscriptionsService {
           accruedPerfFee: formatAmount(position.accruedPerfFee),
           /** What the investor would actually receive: gross less fees they already owe. */
           netValue: net ? formatAmount(net) : null,
-          pnl: net ? formatAmount(net.minus(position.costBasis)) : null,
+          pnl: net ? formatAmount(exactDiff(net, position.costBasis)) : null,
 
           lockedUntil: position.lockedUntil,
           perfFeeBps: position.strategy.perfFeeBps,
