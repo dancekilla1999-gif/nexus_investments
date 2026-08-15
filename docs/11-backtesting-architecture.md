@@ -1,5 +1,12 @@
 # Backtesting & Strategy Validation Architecture
 
+> **Extended (2026-08-15) by `18-ai-ml-architecture.md` §3–4.** The promotion gate and the
+> survivorship-bias defence below still stand and are still the rule. What docs/18 adds is the
+> machinery this document assumed but did not specify: triple-barrier labelling, purged and
+> embargoed cross-validation, deflated Sharpe against a recorded trial count, the mandatory
+> negative controls, and an event-driven simulator whose data view structurally cannot return
+> the future. Read docs/18 §3–4 as the detail; this document as the policy.
+
 ## 0. The rule this document exists to enforce
 
 **No trading strategy — rule-based or ML — is ever connected to a live Managed Account

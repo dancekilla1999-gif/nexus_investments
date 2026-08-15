@@ -561,6 +561,92 @@ sign-off, before any `PLATFORM_MODE=live` deployment.
 
 ---
 
+## Track C — AI Trading Intelligence (MVP32–41)
+
+Added 2026-08-15. Supersedes the MVP6 signal-engine plan, which `docs/07` described and
+`docs/17–19` replace. The ordering below is a dependency chain, not a preference: each phase
+makes the next one *verifiable*, and skipping to the models produces a system whose output
+cannot be evaluated. See `docs/19` §9 for the same table with its gates.
+
+### MVP32 — Point-in-time data platform
+TimescaleDB alongside the existing Postgres, ingestion per provider class, dual `eventTime` /
+`ingestTime` on every record, macro stored as append-only vintages, measured source-reliability
+scoring, and the data quality gate.
+*Acceptance:* replaying a recorded live session from the store reproduces that session's inputs
+exactly; a query for time `t` cannot return a record whose `ingestTime > t`; a failed quality
+gate produces no signal rather than a degraded one.
+
+### MVP33 — Feature engine
+One implementation serving both backtest and live. 100+ versioned features across ten families,
+enforced warmup, multi-timeframe assembly using only closed higher-timeframe bars, offline
+Parquet and online Redis feature stores.
+*Acceptance:* offline recomputation of a historical day matches what was recorded online
+bit-for-bit — this is the train/serve-skew test and it is the milestone; a feature whose
+computation changed without a version bump fails contract validation at load.
+
+### MVP34 — Labelling and validation harness
+Triple-barrier labels resolved on the finest available path, meta-labelling, purged and embargoed
+cross-validation, sample weighting by uniqueness, walk-forward runner, trial counter.
+*Acceptance:* the negative controls behave correctly — shuffled labels destroy performance, and
+features shifted one bar into the future *improve* it. A harness that passes the shuffled-label
+control while failing the shifted-feature control has a leak and the milestone is not met.
+
+### MVP35 — Event-driven backtester
+Replay clock with a data view that structurally cannot return the future; fees, spread,
+size-dependent slippage, partial fills, latency, funding, liquidity caps and market impact.
+*Acceptance:* a zero-cost run and a realistic-cost run differ materially on the same strategy;
+attempting to read a future bar is a type error, not a convention.
+
+### MVP36 — Models, calibration, ensemble, regime
+LightGBM primary and meta models, a mandatory logistic-regression baseline, per-domain models,
+a stacked regime-aware combiner trained on out-of-fold predictions only, isotonic calibration,
+and the causal regime classifier.
+*Acceptance:* the ensemble beats the baseline out-of-sample, and the calibration curve holds —
+the 0.7 bucket resolves near 0.7. An uncalibrated model does not pass.
+
+### MVP37 — Model registry, drift, paper and shadow
+Full lineage per version, artefact hashing checked on load, the seven-state status ladder, drift
+monitoring (PSI, calibration decay, realised-vs-expected R) with graduated automatic response.
+*Acceptance:* a drifting model is size-reduced then quarantined without human action, falling
+back to the previous production version; a running artefact whose hash does not match the
+registry takes trading offline.
+
+### MVP38 — Signal engine
+EV gate net of real costs, tiers A+/A/B/C/NO TRADE derived from pipeline outputs, attribution-
+derived explanations, append-only `signals` table.
+*Acceptance:* a signal row is written before its outcome is knowable and cannot be updated
+(trigger, as with `nav_snapshots`); conflicting inputs produce NO TRADE; the explanation is
+generated from SHAP values and per-domain probabilities, never composed separately.
+
+### MVP39 — Portfolio optimiser and risk engine
+Risk-contribution exposure rather than notional, correlation clusters with their own budget,
+beta-to-BTC cap, the six-term position-size minimum, stops mandatory before fills.
+*Acceptance:* every pre-trade check blocks a violating order, proven individually per check; two
+highly-correlated candidates do not both size to full; no automated position can exist without a
+stop.
+
+### MVP40 — Auto-trading and execution
+The gated enable flow, server-side limit enforcement, the four modes, execution-quality
+measurement feeding back into the slippage model, and the full kill-switch matrix.
+*Acceptance:* the kill switch stops new orders under load without market-closing open positions;
+a market-data failure halts entries; a position/venue divergence halts new orders; a client
+sending a size above the user's configured limit is rejected server-side.
+
+### MVP41 — Research Lab and performance surfaces
+Operator-only lab with dataset/feature/model selection, walk-forward runs, SHAP importance,
+strategy correlation; investor-facing performance with the calibration chart.
+*Acceptance:* every experiment increments the trial counter that deflates the reported Sharpe;
+the lab cannot write to the production registry, only submit a promotion request; every displayed
+figure is a view over `signal_results` with no writable aggregate anywhere.
+
+**Data dependencies.** Phases 32–38 are buildable entirely on free sources (exchange public APIs,
+Deribit, DefiLlama). A real macro engine needs a paid calendar with consensus and vintages
+(~$100–500/mo); a real on-chain engine needs flow and whale data (~$300–1500/mo); order-flow
+*models* need historical L2 (~$500–2000/mo) — deliberately deferred, since live capture is free
+and should be accumulated forward first. See `docs/17` §5.
+
+---
+
 ## How to pick up MVP2
 
 1. `apps/api/prisma/schema.prisma` already has the MVP2 tables (`wallets`,

@@ -1,5 +1,22 @@
 # AI Signal Architecture
 
+> **⚠️ SUPERSEDED (2026-08-15) by `17-ai-data-architecture.md`,
+> `18-ai-ml-architecture.md` and `19-ai-signal-and-auto-trading.md`.**
+>
+> This document described a rules-plus-weighted-scoring engine reading indicators directly off
+> live candles, with an ML upgrade sketched as optional. That design is not wrong so much as
+> **unfalsifiable**: with no point-in-time data store, no separation between what a model could
+> have known and what actually happened, and no purged validation, there is no way to establish
+> out-of-sample performance — and a signal engine whose accuracy cannot be established is a
+> marketing asset, not a trading system.
+>
+> What carries forward unchanged: **§10 (guardrails)** — the ban on guarantee language, the
+> requirement to show live win-rate alongside confidence, and the shared disclaimer component —
+> and **§6's insert-only `signal_results`** discipline, which docs/19 §5.4 extends by making the
+> `signals` table itself append-only.
+>
+> Kept for history. Do not build from it.
+
 ## 1. What this module is not
 
 Not a random Buy/Sell generator, not a "guaranteed profit" system, not a black box. Every

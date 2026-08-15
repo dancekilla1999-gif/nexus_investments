@@ -126,6 +126,37 @@ Violating any of these is a defect regardless of what a ticket says.
 18. **Append-only history.** Ledger entries, audit logs, NAV snapshots, fee accruals and consent
     records reject UPDATE and DELETE by trigger. Corrections are new rows.
 
+### AI / quantitative engine (docs/17–19)
+
+19. **One feature implementation, serving backtest and live.** Never two. Train/serve skew is
+    the most common way a quantitative system fails in production, and writing indicators twice
+    guarantees it. The invariant test — offline recomputation matching what was recorded online
+    bit-for-bit — is a production check, not a nicety.
+20. **Filter on `ingestTime`, never on `eventTime`.** Every record carries both. Macro series
+    are stored as append-only vintages because CPI and NFP get revised, and training on the
+    revised value is training on data that did not exist on the day being simulated.
+21. **Purge and embargo every cross-validation split.** Triple-barrier labels resolve in the
+    future, so a training sample near a fold boundary overlaps the test window. Without purging,
+    a worthless strategy cross-validates at 60%+.
+22. **Report the deflated Sharpe against a harness-owned trial counter.** Try 500 configurations
+    and the best looks excellent by chance. The researcher does not own the counter, and it does
+    not reset when a new notebook starts.
+23. **Run the negative controls before believing any result.** Shuffled labels must destroy
+    performance; features shifted one bar into the future must *improve* it. The shifted-feature
+    control is the cheapest leak detector available and almost nobody runs it.
+24. **An LLM never produces a probability, direction, size or price.** It classifies news and
+    renders explanations from real model attribution. A number from a prompt cannot be
+    calibrated, validated out-of-sample, or monitored for drift.
+25. **NO TRADE is the default, and four stages can each force it independently** — data quality,
+    EV, portfolio, risk. No strong reading at one stage may override another. A single blended
+    score that one strong input can carry is how a system ends up trading its worst setups at
+    its largest size.
+26. **Size is an output of risk, never of confidence.** Six ceilings, take the minimum. Kelly is
+    capped at a quarter and is never the sole term.
+27. **A signal row is written before its outcome is knowable, and is append-only.** Same trigger
+    discipline as `nav_snapshots` and `fee_accruals`. A system that can edit a past prediction
+    has no performance history, only a marketing asset.
+
 ---
 
 ## 3. Commands
