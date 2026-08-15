@@ -600,13 +600,45 @@ writing the lookahead version has to do it deliberately rather than by forgettin
 *Deferred honestly:* TimescaleDB is unavailable in this Postgres, so the tables use BRIN indexes
 on time; converting to hypertables is one call and no interface change.
 
-### MVP33 — Feature engine
-One implementation serving both backtest and live. 100+ versioned features across ten families,
-enforced warmup, multi-timeframe assembly using only closed higher-timeframe bars, offline
-Parquet and online Redis feature stores.
-*Acceptance:* offline recomputation of a historical day matches what was recorded online
-bit-for-bit — this is the train/serve-skew test and it is the milestone; a feature whose
-computation changed without a version bump fails contract validation at load.
+### MVP33 — Feature engine — ✅ done
+One implementation serving both backtest and live. **119 versioned features** on the anchor
+timeframe across six computable-from-OHLCV families, expanding past 800 columns once
+higher-timeframe context is folded in. 40 kernel unit tests against reference definitions, 30 e2e.
+
+*Acceptance — met.* A vector computed live, recorded, and recomputed offline reproduces the
+identical hash and identical values in every column. Getting there took two real fixes, both
+found by the acceptance test itself:
+
+1. **The feature contract was not self-describing.** `featureSetVersion` named the anchor and
+   context sets but nothing recorded *which* context timeframes were actually used, so
+   recomputation fell back to the default set — several hundred extra all-null columns and a
+   different hash. The check reported skew where none existed, which is worse than no check: a
+   verification that cries wolf gets the first real finding waved through. `contextTimeframes` is
+   now stored on the record and replayed exactly.
+
+2. **Prisma's `Json` column does not round-trip an IEEE-754 double.** Writing
+   `11.154987603973913` and reading it back yields `11.15498760397391` — one digit gone somewhere
+   between the query engine and JSONB. Invisible in almost any other application; fatal here,
+   because the skew check compares exactly and would have failed on every vector forever. Values
+   are now stored as their canonical 17-significant-digit text, which is the same serialisation
+   the hash already used — one representation instead of two ways to disagree. Confirmed with a
+   direct probe against the Prisma client rather than assumed.
+
+Other properties the tests pin: warmup is enforced (a 200-EMA over 120 bars is null, not a
+plausible wrong number); absence is never encoded as zero; a null column and an absent column
+hash differently; higher timeframes enter only via bars that have closed; a missing higher
+timeframe becomes null columns rather than vanishing, so the model can tell "the 4h said nothing"
+from "there was no 4h"; and timeframe conflict is represented (`tf_conflict = 1` on a split vote)
+rather than averaged into a weak reading of whichever side is marginally ahead.
+
+*Also fixed:* one e2e test registered three investors with `Promise.all`, standing up nine
+concurrent supertest listeners, and reset connections late in a full-suite run once enough
+sockets had accumulated in TIME_WAIT. It was testing the unit register, not concurrency, so the
+parallelism bought nothing and cost a flake.
+
+*Deferred honestly:* order-flow, derivatives, on-chain, macro and news features are declared in
+`docs/17` §3.2 and **not built** — they need data the platform does not ingest yet (MVP32 covers
+OHLCV only). They are absent rather than stubbed, so nothing reports a value it does not have.
 
 ### MVP34 — Labelling and validation harness
 Triple-barrier labels resolved on the finest available path, meta-labelling, purged and embargoed

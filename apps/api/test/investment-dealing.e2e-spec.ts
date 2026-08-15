@@ -386,7 +386,13 @@ describe('Investment dealing (e2e)', () => {
 
     it('keeps the unit register and the strategy total in lockstep', async () => {
       // Σ position.units == strategy.totalUnits is the invariant every derived number rests on.
-      const investors = await Promise.all([investor('10000'), investor('10000'), investor('10000')]);
+      // Sequential, not Promise.all. Each `investor()` is three HTTP round trips through
+      // supertest, which stands up an ephemeral listener per request; firing nine of them at
+      // once was resetting connections (ECONNRESET) late in a full-suite run, once enough
+      // sockets had accumulated in TIME_WAIT. This test is about the unit register, not about
+      // concurrency, so the parallelism bought nothing and cost a flake.
+      const investors = [];
+      for (let i = 0; i < 3; i++) investors.push(await investor('10000'));
       for (const inv of investors) await subscribe(inv.token, '1000').expect(201);
       await strike();
 

@@ -1,5 +1,68 @@
 # Changelog
 
+## MVP33 — Feature engine
+
+**Date:** 2026-08-15
+
+One implementation, serving both the backtest and the live path. There is no separate "backtest
+indicator library" in this repository and there must never be one — writing the code twice
+guarantees train/serve skew eventually, and the failure is silent: the model simply starts seeing
+a distribution it was never fit on.
+
+119 features on the anchor timeframe (trend, momentum, volatility, volume, market structure,
+statistical), past 800 columns with higher-timeframe context. 40 kernel tests against published
+definitions rather than snapshots — a snapshot pins whatever the code currently produces,
+including whatever it produces wrongly.
+
+### The acceptance test found two real bugs
+
+**The feature contract was not self-describing.** `featureSetVersion` named the anchor and context
+sets, but nothing recorded *which* context timeframes were actually folded in. Recomputation fell
+back to the engine's default set, adding several hundred all-null columns and a different hash —
+so the skew check reported skew on a vector that had not skewed. That is worse than having no
+check at all: a verification that cries wolf trains everyone to wave the first real finding
+through. `contextTimeframes` is now part of the stored contract and replayed exactly.
+
+**Prisma's `Json` column does not round-trip an IEEE-754 double.** Writing `11.154987603973913`
+and reading it back gives `11.15498760397391`; the query engine reformats the float somewhere
+between the driver and JSONB and one digit disappears. This is invisible in almost any other
+application and fatal in this one, because the skew check compares exactly — every verification
+would have failed forever, for a reason having nothing to do with features. Values are now stored
+as canonical 17-significant-digit text (17 is the smallest number of decimal digits that uniquely
+identifies every double), which is the same serialisation the hash already used. One
+representation rather than two ways to disagree. Confirmed by probing the Prisma client directly,
+not by reasoning about it.
+
+### Properties the tests hold the engine to
+
+- **Warmup is enforced.** A 200-EMA over 120 bars is null, not a plausible wrong number — that is
+  how a backtest acquires a spurious edge at the start of every walk-forward window.
+- **Absence is never zero.** Zero is a value a model learns from; encoding "unknown" as 0.0
+  teaches it the indicator was neutral when nothing was known.
+- **A null column and an absent column hash differently.** They are different situations.
+- **Higher timeframes enter only through closed bars**, enforced structurally: the context window
+  comes from the same `asOf`-filtered read, so a forming bar is not in the store to be picked up.
+- **A missing higher timeframe becomes null columns**, not silence — the model must be able to
+  tell "the 4h said nothing" from "there was no 4h".
+- **Conflict is representable.** 1h bullish against 4h bearish gives `tf_conflict = 1` and
+  `tf_alignment ≈ 0`, rather than averaging into a weak reading of whichever side is ahead.
+- **Volatility annualises per timeframe.** A shared bars-per-year constant would scale every
+  volatility feature wrongly on all but one timeframe; the ratio between the 1h and 1d values is
+  asserted to be exactly √24.
+
+### Also fixed
+
+An e2e test registered three investors with `Promise.all`, standing up nine concurrent supertest
+listeners, and reset connections (ECONNRESET) late in a full-suite run once enough sockets had
+accumulated in TIME_WAIT. It was testing the unit register, not concurrency.
+
+### Not built, and not stubbed
+
+Order-flow, derivatives, on-chain, macro and news features are declared in `docs/17` §3.2 and are
+**absent** — they need data MVP32 does not ingest yet. Nothing reports a value it does not have.
+
+**Tests:** 175 unit + 268 e2e = **443 passing**, against real PostgreSQL, Redis and live OKX data.
+
 ## MVP32 — Point-in-time data platform
 
 **Date:** 2026-08-15

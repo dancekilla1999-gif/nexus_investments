@@ -881,6 +881,47 @@ model DataQualityFailure {
   @@map("data_quality_failures")
 }
 
+/// A computed feature vector, recorded at the instant it was computed live.
+///
+/// This table exists for exactly one purpose: to make the **train/serve skew invariant testable**
+/// (docs/17 §3.4). Recomputing a historical instant offline must reproduce the hash recorded
+/// online, bit for bit. When it does not, the backtest and the live path have drifted apart and
+/// every model trained on the offline version is being scored on a distribution it never saw —
+/// which is the most common way a quantitative system fails in production, and the least visible.
+///
+/// Append-only, and the hash is over sorted keys with 17-significant-digit numbers, so the
+/// comparison depends on content rather than on serialisation order.
+model FeatureVectorRecord {
+  id        String   @id @default(cuid())
+  symbol    String
+  timeframe String
+  /// The point-in-time instant this vector was computed for.
+  asOf      DateTime
+  /// The anchor bar. Distinct from asOf: several instants inside one bar produce the same bar.
+  barOpenTime DateTime
+
+  /// Feature ids and versions this vector was built from. A model records the same string and
+  /// refuses to score a vector whose contract does not match.
+  featureSetVersion String
+  /// The higher timeframes folded in, exactly as configured at compute time.
+  ///
+  /// Stored explicitly rather than inferred, because a contract that does not fully determine
+  /// the computation is not a contract. Recomputing with the *default* set of context timeframes
+  /// instead of the ones actually used produces extra all-null columns and a different hash —
+  /// which reads as train/serve skew when nothing has skewed. Found by the acceptance test.
+  contextTimeframes String[]
+  values            Json
+  /// Ids that came back null. Kept separately so "incomplete" is queryable without parsing JSON.
+  missing           String[]
+  hash              String
+
+  computedAt DateTime @default(now())
+
+  @@unique([symbol, timeframe, asOf, featureSetVersion])
+  @@index([symbol, timeframe, barOpenTime])
+  @@map("feature_vectors")
+}
+
 /// A macroeconomic series — CPI, NFP, a policy rate. Reference data, not observations.
 model MacroSeries {
   id         String @id @default(cuid())
