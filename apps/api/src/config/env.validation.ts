@@ -91,6 +91,21 @@ export const envSchema = z.object({
   /** Set to '1' to keep scheduled accrual from starting (tests drive it manually). */
   FEE_ACCRUAL_DISABLED: z.string().optional(),
 
+  // ── AI data platform (MVP32) — docs/17 ──
+  /**
+   * Pairs the ingestion loop pulls. Deliberately config, not a hardcoded list: the scanned
+   * universe is meant to be driven by the Top Markets job, and a constant in code would be a
+   * second, contradictory source of truth for what the platform watches.
+   */
+  MARKET_DATA_SYMBOLS: z.string().default('BTC/USDT,ETH/USDT,SOL/USDT'),
+  MARKET_DATA_TIMEFRAMES: z.string().default('1m,5m,15m,1h,4h,1d'),
+  MARKET_DATA_INGESTION_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+  /** Set to '1' to keep scheduled ingestion from starting (tests drive it manually). */
+  MARKET_DATA_INGESTION_DISABLED: z.string().optional(),
+  /** Override for the OKX endpoint — used by tests that need a controlled failure. */
+  OKX_BASE_URL: z.string().default('https://www.okx.com'),
+  COINBASE_BASE_URL: z.string().default('https://api.exchange.coinbase.com'),
+
   NOTIFICATIONS_EMAIL_PROVIDER: z.enum(['console', 'resend', 'ses']).default('console'),
 });
 

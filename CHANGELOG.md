@@ -1,5 +1,85 @@
 # Changelog
 
+## MVP32 — Point-in-time data platform
+
+**Date:** 2026-08-15
+
+The first phase of the AI trading engine, and the least glamorous one. Its entire claim is that
+**you cannot query what you could not have known** — everything downstream is unfalsifiable
+without it.
+
+### The guarantee is a constraint, not a convention
+
+```sql
+CHECK ("ingestTime" >= "closeTime")
+```
+
+A row asserting the platform knew a bar before it closed cannot be stored. In the service layer
+this would be a validation that a backfill script bypasses; at the table it holds against
+anything with a database connection. `macro_observations` carries the same constraint against
+`releaseTime`, which is what stops a provider's history endpoint back-filling a *revised* CPI
+figure under the original release date — the macro-revision leak, which is invisible, flattering
+and fatal to any result built on it.
+
+Both tables are append-only by trigger, as are `data_quality_failures`. A bar a model trained on
+must not change underneath it.
+
+### One read path, and it has no event-time filter
+
+`CandleRepository` is the only way anything reads candles, every method takes a mandatory `asOf`,
+and there is no default of "now". A developer writing `where: { closeTime: { lte: t } }` has
+written a lookahead bug that produces a beautiful backtest and no live edge, and it passes review
+because it looks obviously correct. Making that require deliberate effort is the point.
+
+### Providers are measured, not trusted
+
+Reliability is an exponentially-weighted success rate per (provider, category, symbol) — a source
+can be excellent for BTC and useless for a mid-cap — asymmetric, so a provider that dropped an
+hour of data does not earn its score back with one good response. Where two venues disagree
+beyond 200 bps the values are **not averaged**: the primary is used, both are penalised, and the
+disagreement becomes a quality failure. Averaging produces a number wrong in a new way and hides
+the fact that anything was wrong, which is precisely the event a data platform exists to catch.
+
+### Three findings, all from calling real endpoints
+
+1. **Binance and Bybit geo-block this deployment.** `docs/17` §5 had recommended Binance first.
+   OKX is now primary, Coinbase secondary, Kraken available as reference. The correction cost a
+   config change rather than a rewrite, which is the whole argument for the abstraction — and it
+   is a reminder that a provider recommendation in a design document is a hypothesis until
+   something calls the API.
+
+2. **OKX's `1D` bar opens at 16:00 UTC**, a Hong Kong close convention; Coinbase's opens at
+   00:00. The two venues shared **zero** daily bars, so the cross-check compared nothing while
+   continuing to report success. A data-quality mechanism that fails by quietly doing nothing is
+   worse than one that fails loudly. Every platform timeframe is now UTC-anchored (`1Dutc`,
+   `1Wutc`), with a test asserting a non-empty overlap.
+
+3. **The outlier detector could not detect outliers.** A bad print produces two extreme returns —
+   into the spike and back out — and with ~60 bars those two dominate the variance meant to catch
+   them. A 20% jump in an otherwise flat series scored 5.4σ against a 10σ threshold and passed.
+   Replaced with the Hampel identifier (median and MAD, 50% breakdown point, scaled by 1.4826 so
+   the threshold keeps its usual meaning). Caught by a test built from exactly that series.
+
+### The gate refuses rather than degrades
+
+Missing bars, staleness judged on the bar's own close time, robust outliers, zero-volume windows,
+insufficient history, provider disagreement. A failure produces **no signal** — not a signal with
+lower confidence. Confidence is something a model earned by being right in the past, and there is
+no evidence at all about how it performs on data that is missing or corrupt; discounting it there
+would invent a number.
+
+Every refusal is recorded permanently, because "why was there no signal at 14:00?" must have an
+answer. A gate that silently declines is indistinguishable from a gate that is broken.
+
+### Deferred honestly
+
+TimescaleDB is not available in this deployment's Postgres 16, so the tables use BRIN indexes on
+time — which covers multi-year range scans at a fraction of a btree's size. Converting to
+hypertables is one `create_hypertable` call and no interface change.
+
+**Tests:** 135 unit + 238 e2e = **373 passing**, against real PostgreSQL, Redis, and the live
+OKX and Coinbase public APIs.
+
 ## MVP16 + MVP17 — High Water Mark, and the fees on top of it
 
 **Date:** 2026-08-15

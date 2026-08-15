@@ -122,7 +122,12 @@ uncorrelated with what live trading will do.
 ### 2.2 Storage choice
 
 **TimescaleDB** (a PostgreSQL extension) for all time series, alongside the existing Postgres
-rather than instead of it. Reasoning: it is Postgres, so it inherits the operational knowledge,
+rather than instead of it. *Implementation note (2026-08-15): the extension is not available in
+the current deployment's Postgres 16, so the tables ship as ordinary tables with a BRIN index on
+the time column, which covers range scans over years of history at a fraction of a btree's size.
+Nothing in the schema or the access path assumes either choice — turning `market_candles` into a
+hypertable is a single `create_hypertable` call whenever the extension is installed, and the
+repository interface would not change.* Reasoning: it is Postgres, so it inherits the operational knowledge,
 backups, migrations and the Prisma connection the platform already has; hypertables and
 continuous aggregates handle the write volume and the rollup queries; and there is no second
 database technology to run. A dedicated column store (ClickHouse, QuestDB) is faster for full
@@ -348,7 +353,7 @@ honestly without it.
 
 | # | Need | Recommended | Cost/mo | Blocking? |
 |---|---|---|---|---|
-| 1 | Historical + live OHLCV, trades, funding, OI, liquidations | **Binance / Bybit / OKX public APIs** | Free | No — free and sufficient |
+| 1 | Historical + live OHLCV, trades, funding, OI, liquidations | **OKX (primary) + Coinbase (cross-check)** — see the note below | Free | No — free and sufficient |
 | 2 | Multi-venue normalisation, one integration | CCXT (self-host) | Free | No |
 | 3 | Options IV / skew / term structure | **Deribit public API** | Free | No, for BTC/ETH only |
 | 4 | TVL, protocol data | **DefiLlama** | Free | No |
@@ -358,6 +363,21 @@ honestly without it.
 | 8 | ETF creations/redemptions | Farside (scrape) or a paid terminal | $0–1000 | No |
 | 9 | Historical L2 order book | Tardis.dev | $500–2000+ | **Yes** for order-flow *models* |
 | 10 | Social sentiment | LunarCrush / Santiment | $100–500 | No — lowest tier |
+
+**Correction, from actually calling the APIs (2026-08-15).** This table originally led with
+Binance. Binance answers this deployment with a geographic block, and so does Bybit, behind a
+CloudFront country rule. OKX, Coinbase and Kraken all answer. **OKX is now the primary and
+Coinbase the secondary**, and the point is not which venue won — it is that a provider
+recommendation in a design document is a hypothesis until something calls the endpoint. The
+abstraction meant the correction cost a config change instead of a rewrite, which is the entire
+argument for having it.
+
+A second finding from the same session, and a subtler one: OKX's plain `1D` bar opens at 16:00
+UTC (a Hong Kong close convention) while Coinbase's opens at 00:00, so the two venues shared
+**zero** daily bars and the cross-check silently compared nothing while continuing to report
+success. Every platform timeframe is now anchored to UTC (`1Dutc`, `1Wutc`), verified by a test
+that asserts a non-empty overlap. A data-quality mechanism that fails by doing nothing, quietly,
+is worse than one that fails loudly — it is indistinguishable from one that is working.
 
 **The honest recommendation.** Build Phase 1 entirely on rows 1–4, which are free and cover
 OHLCV, derivatives, options for the two assets that matter most, and basic on-chain. That is

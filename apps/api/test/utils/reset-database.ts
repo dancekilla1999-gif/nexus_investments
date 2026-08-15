@@ -3,7 +3,8 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 /**
  * Wipes all per-test data while respecting the append-only constraints.
  *
- * `ledger_entries`, `ledger_transactions`, `audit_logs`, and `risk_disclosure_acceptances`
+ * `ledger_entries`, `ledger_transactions`, `audit_logs`, `risk_disclosure_acceptances`,
+ * `market_candles`, `macro_observations` and `data_quality_failures`
  * reject DELETE by trigger (migration 20260814091830_ledger_integrity_constraints) — that is
  * the point of them. Row-level triggers do not fire on TRUNCATE, which is the standard and
  * intended escape hatch for resetting append-only tables in a test database.
@@ -15,6 +16,11 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 export async function resetDatabase(prisma: PrismaService): Promise<void> {
   await prisma.$executeRawUnsafe(`
     TRUNCATE
+      market_candles,
+      macro_observations,
+      macro_series,
+      data_provider_status,
+      data_quality_failures,
       balances,
       ledger_entries,
       ledger_transactions,

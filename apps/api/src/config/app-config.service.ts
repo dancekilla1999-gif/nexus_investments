@@ -152,4 +152,38 @@ export class AppConfigService {
   get feeAccrualEnabled() {
     return this.config.get('FEE_ACCRUAL_DISABLED', { infer: true }) !== '1';
   }
+
+  // ── AI data platform ────────────────────────────────────────────────────
+
+  get marketDataSymbols(): string[] {
+    return this.config
+      .get('MARKET_DATA_SYMBOLS', { infer: true })
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+  }
+
+  get marketDataTimeframes(): string[] {
+    return this.config
+      .get('MARKET_DATA_TIMEFRAMES', { infer: true })
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  get marketDataIngestionIntervalMs() {
+    return this.config.get('MARKET_DATA_INGESTION_INTERVAL_MS', { infer: true });
+  }
+
+  get marketDataIngestionEnabled() {
+    return this.config.get('MARKET_DATA_INGESTION_DISABLED', { infer: true }) !== '1';
+  }
+
+  get okxBaseUrl() {
+    return this.config.get('OKX_BASE_URL', { infer: true });
+  }
+
+  get coinbaseBaseUrl() {
+    return this.config.get('COINBASE_BASE_URL', { infer: true });
+  }
 }

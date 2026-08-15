@@ -568,13 +568,37 @@ Added 2026-08-15. Supersedes the MVP6 signal-engine plan, which `docs/07` descri
 makes the next one *verifiable*, and skipping to the models produces a system whose output
 cannot be evaluated. See `docs/19` §9 for the same table with its gates.
 
-### MVP32 — Point-in-time data platform
-TimescaleDB alongside the existing Postgres, ingestion per provider class, dual `eventTime` /
-`ingestTime` on every record, macro stored as append-only vintages, measured source-reliability
-scoring, and the data quality gate.
-*Acceptance:* replaying a recorded live session from the store reproduces that session's inputs
-exactly; a query for time `t` cannot return a record whose `ingestTime > t`; a failed quality
-gate produces no signal rather than a degraded one.
+### MVP32 — Point-in-time data platform — ✅ done
+Dual `eventTime` / `ingestTime` on every record, macro as append-only vintages, measured
+source-reliability scoring, and the data quality gate. 33 tests, against live OKX/Coinbase and
+real PostgreSQL.
+
+*Acceptance — met.* The guarantee is enforced by a **CHECK constraint**, not by service code:
+`market_candles.ingestTime >= closeTime`, so a row asserting the platform knew a bar before it
+closed cannot be stored — including by a backfill script that bypasses every service, which is
+how this rule actually gets broken. `macro_observations` carries the same constraint against
+`releaseTime`, which is what stops a provider's history endpoint back-filling a *revised* CPI
+figure under the original release date. Both tables are append-only by trigger.
+
+`CandleRepository` is the only read path and every method takes a mandatory `asOf`, filtering on
+`ingestTime`. There is no event-time filter available and no default of "now" — a developer
+writing the lookahead version has to do it deliberately rather than by forgetting.
+
+**Findings from building it, all three from calling real endpoints:**
+
+1. **Binance and Bybit are geo-blocked** from this deployment; `docs/17` §5 had recommended
+   Binance first. OKX is now primary, Coinbase secondary. A provider recommendation in a design
+   document is a hypothesis until something calls the API.
+2. **OKX's `1D` bar opens at 16:00 UTC**, Coinbase's at 00:00 — the two venues shared *zero*
+   daily bars, so the cross-check compared nothing while still reporting success. Fixed by
+   anchoring every platform timeframe to UTC; a test now asserts a non-empty overlap.
+3. **The outlier detector could not detect outliers.** A spike produces two extreme returns, in
+   and out; with ~60 bars those two dominate the variance meant to catch them, and a 20% jump in
+   a flat series scored 5.4σ against a 10σ threshold. Replaced with the Hampel identifier
+   (median/MAD, 50% breakdown point). Caught by a test built from exactly that series.
+
+*Deferred honestly:* TimescaleDB is unavailable in this Postgres, so the tables use BRIN indexes
+on time; converting to hypertables is one call and no interface change.
 
 ### MVP33 — Feature engine
 One implementation serving both backtest and live. 100+ versioned features across ten families,

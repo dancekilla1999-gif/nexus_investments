@@ -61,36 +61,36 @@ enum UserStatus {
 }
 
 model User {
-  id                String     @id @default(cuid())
-  email             String     @unique
-  emailVerifiedAt   DateTime?
-  phone             String?
-  phoneVerifiedAt   DateTime?
-  passwordHash      String
-  role              UserRole   @default(USER)
-  status            UserStatus @default(PENDING_VERIFICATION)
+  id              String     @id @default(cuid())
+  email           String     @unique
+  emailVerifiedAt DateTime?
+  phone           String?
+  phoneVerifiedAt DateTime?
+  passwordHash    String
+  role            UserRole   @default(USER)
+  status          UserStatus @default(PENDING_VERIFICATION)
 
   // Security Center
-  antiPhishingCode  String?
-  totpSecretEnc     String?    // envelope-encrypted at the application layer, never plaintext
-  totpEnabled       Boolean    @default(false)
+  antiPhishingCode           String?
+  totpSecretEnc              String? // envelope-encrypted at the application layer, never plaintext
+  totpEnabled                Boolean @default(false)
   withdrawalWhitelistEnabled Boolean @default(false)
 
-  referralCode      String     @unique @default(cuid())
-  referredById      String?
-  referredBy        User?      @relation("UserReferrals", fields: [referredById], references: [id])
-  referredUsers     User[]     @relation("UserReferrals")
+  referralCode  String  @unique @default(cuid())
+  referredById  String?
+  referredBy    User?   @relation("UserReferrals", fields: [referredById], references: [id])
+  referredUsers User[]  @relation("UserReferrals")
 
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  lastLoginAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
 
-  profile           Profile?
-  devices           Device[]
-  sessions          RefreshSession[]
-  backupCodes       BackupCode[]
-  apiKeys           ApiKey[]
-  notifications     Notification[]
+  profile       Profile?
+  devices       Device[]
+  sessions      RefreshSession[]
+  backupCodes   BackupCode[]
+  apiKeys       ApiKey[]
+  notifications Notification[]
 
   // MVP2+ relations (schema stable now, services land per milestone)
   kycCases          KycCase[]
@@ -102,8 +102,8 @@ model User {
   withdrawals       Withdrawal[]
   orders            Order[]
   p2pAds            P2PAd[]
-  p2pOrdersAsBuyer  P2POrder[] @relation("P2POrderBuyer")
-  p2pOrdersAsSeller P2POrder[] @relation("P2POrderSeller")
+  p2pOrdersAsBuyer  P2POrder[]      @relation("P2POrderBuyer")
+  p2pOrdersAsSeller P2POrder[]      @relation("P2POrderSeller")
   subscriptions     Subscription[]
   riskEvents        RiskEvent[]
 
@@ -122,68 +122,68 @@ model User {
 }
 
 model Profile {
-  id                String    @id @default(cuid())
-  userId            String    @unique
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  firstName         String?
-  lastName          String?
-  dateOfBirth       DateTime?
-  country           String?
-  addressLine1      String?
-  addressLine2      String?
-  city              String?
-  state             String?
-  postalCode        String?
+  firstName    String?
+  lastName     String?
+  dateOfBirth  DateTime?
+  country      String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
 
-  preferredCurrency String    @default("USD")
-  timezone          String    @default("UTC")
-  locale            String    @default("en")
+  preferredCurrency String  @default("USD")
+  timezone          String  @default("UTC")
+  locale            String  @default("en")
   avatarUrl         String?
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("profiles")
 }
 
 model Device {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   fingerprint String
   userAgent   String?
   ip          String?
   label       String?
-  trusted     Boolean   @default(false)
+  trusted     Boolean @default(false)
 
   firstSeenAt DateTime  @default(now())
   lastSeenAt  DateTime  @default(now())
   revokedAt   DateTime?
 
-  sessions    RefreshSession[]
+  sessions RefreshSession[]
 
   @@unique([userId, fingerprint])
   @@map("devices")
 }
 
 model RefreshSession {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deviceId          String?
-  device            Device?   @relation(fields: [deviceId], references: [id])
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId String?
+  device   Device? @relation(fields: [deviceId], references: [id])
 
-  tokenHash         String    @unique
-  issuedAt          DateTime  @default(now())
-  expiresAt         DateTime
-  revokedAt         DateTime?
+  tokenHash           String    @unique
+  issuedAt            DateTime  @default(now())
+  expiresAt           DateTime
+  revokedAt           DateTime?
   replacedBySessionId String?
-  stepUpVerifiedAt  DateTime?
+  stepUpVerifiedAt    DateTime?
 
-  ip                String?
-  userAgent         String?
+  ip        String?
+  userAgent String?
 
   @@index([userId])
   @@map("refresh_sessions")
@@ -201,18 +201,18 @@ model BackupCode {
 }
 
 model ApiKey {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name        String
-  keyPrefix   String
-  keyHash     String    @unique
-  scopes      String[]
-  lastUsedAt  DateTime?
-  expiresAt   DateTime?
-  revokedAt   DateTime?
-  createdAt   DateTime  @default(now())
+  name       String
+  keyPrefix  String
+  keyHash    String    @unique
+  scopes     String[]
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
 
   @@map("api_keys")
 }
@@ -305,19 +305,19 @@ enum KycCaseStatus {
 }
 
 model KycCase {
-  id               String        @id @default(cuid())
-  userId           String
-  user             User          @relation(fields: [userId], references: [id])
-  tier             KycTier       @default(BASIC)
-  status           KycCaseStatus @default(PENDING)
-  provider         String?
-  providerRef      String?
-  submittedAt      DateTime?
-  reviewedAt       DateTime?
-  reviewedById     String?
-  rejectionReason  String?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  tier            KycTier       @default(BASIC)
+  status          KycCaseStatus @default(PENDING)
+  provider        String?
+  providerRef     String?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedById    String?
+  rejectionReason String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([userId])
   @@map("kyc_cases")
@@ -331,15 +331,15 @@ enum AmlCaseStatus {
 }
 
 model AmlCase {
-  id                    String        @id @default(cuid())
-  userId                String
-  user                  User          @relation(fields: [userId], references: [id])
-  status                AmlCaseStatus @default(OPEN)
-  reason                String?
-  relatedTransactionId  String?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  closedAt              DateTime?
+  id                   String        @id @default(cuid())
+  userId               String
+  user                 User          @relation(fields: [userId], references: [id])
+  status               AmlCaseStatus @default(OPEN)
+  reason               String?
+  relatedTransactionId String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  closedAt             DateTime?
 
   @@index([userId])
   @@map("aml_cases")
@@ -357,23 +357,23 @@ enum ChainType {
 }
 
 model Chain {
-  id                     String    @id @default(cuid())
-  key                    String    @unique // "ethereum", "arbitrum", "base", "bnb", "polygon", "solana", "tron", "bitcoin"
-  name                   String
-  type                   ChainType
-  isTestnet              Boolean   @default(true)
-  nativeAssetSymbol      String
-  explorerUrlTemplate    String?
-  confirmationsRequired  Int       @default(12)
-  isEnabled              Boolean   @default(true)
+  id                    String    @id @default(cuid())
+  key                   String    @unique // "ethereum", "arbitrum", "base", "bnb", "polygon", "solana", "tron", "bitcoin"
+  name                  String
+  type                  ChainType
+  isTestnet             Boolean   @default(true)
+  nativeAssetSymbol     String
+  explorerUrlTemplate   String?
+  confirmationsRequired Int       @default(12)
+  isEnabled             Boolean   @default(true)
 
   /// Highest block the deposit watcher has fully processed. Null = not yet scanned; the
   /// watcher starts from the current head rather than replaying the chain's entire history.
-  lastScannedBlock       BigInt?
+  lastScannedBlock    BigInt?
   /// Monotonic BIP-44 address index allocator. Handed out under a row lock so two concurrent
   /// address requests can never receive the same index — which would give two users the same
   /// deposit address and make their funds indistinguishable.
-  nextDerivationIndex    Int       @default(0)
+  nextDerivationIndex Int     @default(0)
 
   assets                 Asset[]
   wallets                Wallet[]
@@ -408,10 +408,10 @@ model Asset {
   balances               Balance[]
   deposits               Deposit[]
   withdrawals            Withdrawal[]
-  marketsAsBase           Market[] @relation("MarketBaseAsset")
-  marketsAsQuote          Market[] @relation("MarketQuoteAsset")
-  p2pAds                  P2PAd[]
-  investmentStrategies    InvestmentStrategy[]
+  marketsAsBase          Market[]                @relation("MarketBaseAsset")
+  marketsAsQuote         Market[]                @relation("MarketQuoteAsset")
+  p2pAds                 P2PAd[]
+  investmentStrategies   InvestmentStrategy[]
 
   @@unique([chainId, symbol])
   @@map("assets")
@@ -439,19 +439,19 @@ model Wallet {
 
 /// Per-user, per-chain deposit address, deterministically derived from a custody wallet.
 model WalletAddress {
-  id               String   @id @default(cuid())
-  userId           String
-  user             User     @relation(fields: [userId], references: [id])
-  chainId          String
-  chain            Chain    @relation(fields: [chainId], references: [id])
-  assetId          String?
-  asset            Asset?   @relation(fields: [assetId], references: [id])
-  walletId         String
-  wallet           Wallet   @relation(fields: [walletId], references: [id])
+  id       String  @id @default(cuid())
+  userId   String
+  user     User    @relation(fields: [userId], references: [id])
+  chainId  String
+  chain    Chain   @relation(fields: [chainId], references: [id])
+  assetId  String?
+  asset    Asset?  @relation(fields: [assetId], references: [id])
+  walletId String
+  wallet   Wallet  @relation(fields: [walletId], references: [id])
 
-  address          String
-  derivationIndex  Int
-  createdAt        DateTime @default(now())
+  address         String
+  derivationIndex Int
+  createdAt       DateTime @default(now())
 
   @@unique([chainId, address])
   @@unique([chainId, derivationIndex])
@@ -558,12 +558,12 @@ enum LedgerAccountType {
 }
 
 model LedgerAccount {
-  id        String            @id @default(cuid())
-  userId    String
-  user      User              @relation(fields: [userId], references: [id])
-  assetId   String
-  asset     Asset             @relation(fields: [assetId], references: [id])
-  type      LedgerAccountType
+  id      String            @id @default(cuid())
+  userId  String
+  user    User              @relation(fields: [userId], references: [id])
+  assetId String
+  asset   Asset             @relation(fields: [assetId], references: [id])
+  type    LedgerAccountType
 
   /// Null = the user's own self-directed balance. Set = this ledger account belongs to one of
   /// the user's Managed Accounts (docs/10-managed-accounts-architecture.md §5) — structurally
@@ -579,10 +579,10 @@ model LedgerAccount {
   strategyId String?
   strategy   InvestmentStrategy? @relation(fields: [strategyId], references: [id])
 
-  createdAt DateTime          @default(now())
+  createdAt DateTime @default(now())
 
-  entries   LedgerEntry[]
-  balance   Balance?
+  entries LedgerEntry[]
+  balance Balance?
 
   // Postgres treats NULLs as distinct in a unique index, so this constraint alone does NOT
   // stop two personal (managedAccountId = null) ledger accounts of the same
@@ -629,7 +629,7 @@ model LedgerTransaction {
   metadata       Json?
   createdAt      DateTime              @default(now())
 
-  entries        LedgerEntry[]
+  entries LedgerEntry[]
 
   @@index([referenceType, referenceId])
   @@map("ledger_transactions")
@@ -670,7 +670,7 @@ model Balance {
   assetId         String
   asset           Asset             @relation(fields: [assetId], references: [id])
   type            LedgerAccountType
-  amount          Decimal           @db.Decimal(36, 18) @default(0)
+  amount          Decimal           @default(0) @db.Decimal(36, 18)
   updatedAt       DateTime          @updatedAt
 
   @@index([userId])
@@ -737,7 +737,7 @@ model Withdrawal {
   asset          Asset            @relation(fields: [assetId], references: [id])
   toAddress      String
   amount         Decimal          @db.Decimal(36, 18)
-  feeAmount      Decimal          @db.Decimal(36, 18) @default(0)
+  feeAmount      Decimal          @default(0) @db.Decimal(36, 18)
   status         WithdrawalStatus @default(REQUESTED)
   riskScore      Int?
   approvedById   String?
@@ -766,28 +766,175 @@ model Market {
   rank         Int?
   volume24h    Decimal? @db.Decimal(36, 18)
 
-  orders       Order[]
-  trades       Trade[]
-  marketData   MarketCandle[]
-  signals      Signal[]
+  orders  Order[]
+  trades  Trade[]
+  signals Signal[]
 
   @@map("markets")
 }
 
+/// A closed OHLCV bar, from one named source, with the two timestamps every record in the AI
+/// data platform carries (docs/17 §2.1).
+///
+/// `openTime` / `closeTime` are when the bar happened. `ingestTime` is when we first could have
+/// known it. Every training and backtest query filters on **`ingestTime`**, never on event time,
+/// because a 14:00 1h bar does not exist until 15:00 and handing it to a model at 14:30 is
+/// handing it the future. A CHECK constraint enforces `ingestTime >= closeTime`, so the
+/// impossible row cannot be stored in the first place.
+///
+/// Keyed by source as well as symbol: two providers' views of the same bar are two observations,
+/// not one row to overwrite. Disagreement between them is a measurable signal about data quality
+/// (docs/17 §2.4) and averaging it away would hide exactly the situation worth knowing about.
 model MarketCandle {
-  id        String   @id @default(cuid())
-  marketId  String
-  market    Market   @relation(fields: [marketId], references: [id])
-  timeframe String   // "1m","5m","15m","1h","4h","1d"
+  /// Provider key — 'okx', 'coinbase', 'kraken'. Part of the identity, never collapsed.
+  source    String
+  /// Canonical platform symbol, e.g. "BTC/USDT". Provider-specific spellings are normalised on
+  /// the way in, so nothing downstream has to know a venue's naming convention.
+  symbol    String
+  timeframe String
   openTime  DateTime
-  open      Decimal  @db.Decimal(36, 18)
-  high      Decimal  @db.Decimal(36, 18)
-  low       Decimal  @db.Decimal(36, 18)
-  close     Decimal  @db.Decimal(36, 18)
-  volume    Decimal  @db.Decimal(36, 18)
+  /// Exclusive end of the bar. The instant from which this row is knowable.
+  closeTime DateTime
 
-  @@unique([marketId, timeframe, openTime])
-  @@map("market_data")
+  open   Decimal @db.Decimal(36, 18)
+  high   Decimal @db.Decimal(36, 18)
+  low    Decimal @db.Decimal(36, 18)
+  close  Decimal @db.Decimal(36, 18)
+  volume Decimal @db.Decimal(36, 18)
+  trades Int?
+
+  ingestTime DateTime @default(now())
+
+  @@id([source, symbol, timeframe, openTime])
+  @@index([symbol, timeframe, ingestTime])
+  @@map("market_candles")
+}
+
+enum DataProviderTier {
+  /// First asked, and the value used when providers agree.
+  PRIMARY
+  /// Asked when the primary declines; also the cross-check for disagreement detection.
+  SECONDARY
+  /// Never used for a value. Present only to corroborate or contradict.
+  REFERENCE
+}
+
+/// Measured reliability per (provider, category, symbol) — never a configured constant.
+///
+/// A source that is excellent for BTC can be useless for a mid-cap, so the score is per-symbol.
+/// It decays on incident and recovers slowly, because a provider that just dropped an hour of
+/// data has not earned its old score back by answering the next request.
+model DataProviderStatus {
+  id          String           @id @default(cuid())
+  providerKey String
+  tier        DataProviderTier
+  category    String
+  /// Null = the provider's overall score, independent of any one symbol.
+  symbol      String?
+
+  /// 0..1. Computed from the counters below; there is deliberately no endpoint that sets it.
+  reliability Decimal @default(0) @db.Decimal(5, 4)
+
+  successCount      Int @default(0)
+  failureCount      Int @default(0)
+  /// Expected intervals that arrived empty. A silent gap is worse than an error.
+  gapCount          Int @default(0)
+  /// Times this provider materially disagreed with another on the same quantity.
+  disagreementCount Int @default(0)
+
+  lastLatencyMs Int?
+  lastSuccessAt DateTime?
+  lastFailureAt DateTime?
+  lastError     String?
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([providerKey, category, symbol])
+  @@map("data_provider_status")
+}
+
+enum DataQualityFailureKind {
+  MISSING_CANDLES
+  STALE
+  PRICE_OUTLIER
+  ZERO_VOLUME
+  PROVIDER_DISAGREEMENT
+  NO_DATA
+  INSUFFICIENT_HISTORY
+}
+
+/// Insert-only record of every time the data quality gate refused to let a bar through.
+///
+/// Kept because "why was there no signal at 14:00?" must have an answer. A gate that silently
+/// declines is indistinguishable from a gate that is broken, and a system whose quiet periods
+/// cannot be explained is one nobody will trust when it does speak.
+model DataQualityFailure {
+  id        String                 @id @default(cuid())
+  symbol    String
+  timeframe String
+  kind      DataQualityFailureKind
+  detail    String
+  /// The evaluation instant this gate ran for.
+  asOf      DateTime
+  createdAt DateTime               @default(now())
+
+  @@index([symbol, timeframe, asOf])
+  @@map("data_quality_failures")
+}
+
+/// A macroeconomic series — CPI, NFP, a policy rate. Reference data, not observations.
+model MacroSeries {
+  id         String @id @default(cuid())
+  /// Stable platform code, e.g. "US_CPI_YOY".
+  code       String @unique
+  name       String
+  country    String
+  unit       String
+  /// 1..3. Drives the days-to-next-high-impact-event feature.
+  importance Int    @default(2)
+
+  observations MacroObservation[]
+
+  @@map("macro_series")
+}
+
+/// One **vintage** of one macro observation (docs/17 §2.1).
+///
+/// This is the model that makes honest macro backtesting possible, and it is the one most
+/// systems get wrong. US GDP and NFP are revised for months, and a provider's history endpoint
+/// returns the *revised* series. Train on that and the model learns from numbers that did not
+/// exist on the day it is pretending to trade — a leak that is invisible, flattering, and
+/// entirely fatal to the result.
+///
+/// So every print and every revision is its own row. `vintage` 0 is the first print. A backtest
+/// at time `t` reads the highest vintage whose `ingestTime <= t`, which is exactly what a person
+/// sitting at a terminal that day would have seen.
+model MacroObservation {
+  id       String      @id @default(cuid())
+  seriesId String
+  series   MacroSeries @relation(fields: [seriesId], references: [id])
+
+  /// The period the number describes — not when it was published.
+  periodStart DateTime
+  periodEnd   DateTime
+  /// When the statistics office published this figure.
+  releaseTime DateTime
+  ingestTime  DateTime @default(now())
+
+  /// 0 = first print. Each revision is a new row with the next number.
+  vintage Int @default(0)
+
+  actual    Decimal? @db.Decimal(36, 18)
+  /// What the market expected. The surprise — actual minus consensus — carries far more
+  /// information than the level, and it is only meaningful against the consensus as it stood
+  /// before the release.
+  consensus Decimal? @db.Decimal(36, 18)
+  previous  Decimal? @db.Decimal(36, 18)
+
+  source String
+
+  @@unique([seriesId, periodStart, vintage])
+  @@index([seriesId, ingestTime])
+  @@map("macro_observations")
 }
 
 enum OrderSide {
@@ -815,22 +962,22 @@ enum OrderStatus {
 }
 
 model Order {
-  id              String      @id @default(cuid())
-  userId          String
-  user            User        @relation(fields: [userId], references: [id])
-  marketId        String
-  market          Market      @relation(fields: [marketId], references: [id])
-  side            OrderSide
-  type            OrderType
-  status          OrderStatus @default(PENDING)
-  price           Decimal?    @db.Decimal(36, 18)
-  stopPrice       Decimal?    @db.Decimal(36, 18)
-  quantity        Decimal     @db.Decimal(36, 18)
-  filledQuantity  Decimal     @db.Decimal(36, 18) @default(0)
-  idempotencyKey  String      @unique
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  cancelledAt     DateTime?
+  id             String      @id @default(cuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id])
+  marketId       String
+  market         Market      @relation(fields: [marketId], references: [id])
+  side           OrderSide
+  type           OrderType
+  status         OrderStatus @default(PENDING)
+  price          Decimal?    @db.Decimal(36, 18)
+  stopPrice      Decimal?    @db.Decimal(36, 18)
+  quantity       Decimal     @db.Decimal(36, 18)
+  filledQuantity Decimal     @default(0) @db.Decimal(36, 18)
+  idempotencyKey String      @unique
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  cancelledAt    DateTime?
 
   /// Set when this order was placed by a Managed Account's manager/strategy on the owning
   /// user's behalf, not by the user directly — docs/10-managed-accounts-architecture.md §6.
@@ -840,7 +987,7 @@ model Order {
   managedAccountId  String?
   managedAccount    ManagedAccount? @relation(fields: [managedAccountId], references: [id])
 
-  trades          Trade[]
+  trades Trade[]
 
   @@index([userId])
   @@index([marketId, status])
@@ -848,16 +995,16 @@ model Order {
 }
 
 model Trade {
-  id          String    @id @default(cuid())
-  orderId     String
-  order       Order     @relation(fields: [orderId], references: [id])
-  marketId    String
-  market      Market    @relation(fields: [marketId], references: [id])
-  price       Decimal   @db.Decimal(36, 18)
-  quantity    Decimal   @db.Decimal(36, 18)
-  fee         Decimal   @db.Decimal(36, 18) @default(0)
-  side        OrderSide
-  executedAt  DateTime  @default(now())
+  id         String    @id @default(cuid())
+  orderId    String
+  order      Order     @relation(fields: [orderId], references: [id])
+  marketId   String
+  market     Market    @relation(fields: [marketId], references: [id])
+  price      Decimal   @db.Decimal(36, 18)
+  quantity   Decimal   @db.Decimal(36, 18)
+  fee        Decimal   @default(0) @db.Decimal(36, 18)
+  side       OrderSide
+  executedAt DateTime  @default(now())
 
   @@index([marketId])
   @@map("trades")
@@ -878,24 +1025,24 @@ enum P2PPriceType {
 }
 
 model P2PAd {
-  id               String       @id @default(cuid())
-  userId           String
-  user             User         @relation(fields: [userId], references: [id])
-  type             P2PAdType
-  assetId          String
-  asset            Asset        @relation(fields: [assetId], references: [id])
-  fiatCurrency     String
-  priceType        P2PPriceType @default(FIXED)
-  price            Decimal?     @db.Decimal(36, 18)
-  marginPercent    Decimal?     @db.Decimal(5, 2)
-  minLimit         Decimal      @db.Decimal(36, 18)
-  maxLimit         Decimal      @db.Decimal(36, 18)
-  availableAmount  Decimal      @db.Decimal(36, 18)
-  paymentMethods   String[]
-  isActive         Boolean      @default(true)
-  createdAt        DateTime     @default(now())
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id])
+  type            P2PAdType
+  assetId         String
+  asset           Asset        @relation(fields: [assetId], references: [id])
+  fiatCurrency    String
+  priceType       P2PPriceType @default(FIXED)
+  price           Decimal?     @db.Decimal(36, 18)
+  marginPercent   Decimal?     @db.Decimal(5, 2)
+  minLimit        Decimal      @db.Decimal(36, 18)
+  maxLimit        Decimal      @db.Decimal(36, 18)
+  availableAmount Decimal      @db.Decimal(36, 18)
+  paymentMethods  String[]
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
 
-  orders           P2POrder[]
+  orders P2POrder[]
 
   @@index([userId])
   @@map("p2p_ads")
@@ -912,24 +1059,24 @@ enum P2POrderStatus {
 }
 
 model P2POrder {
-  id                       String         @id @default(cuid())
-  adId                     String
-  ad                       P2PAd          @relation(fields: [adId], references: [id])
-  buyerId                  String
-  buyer                    User           @relation("P2POrderBuyer", fields: [buyerId], references: [id])
-  sellerId                 String
-  seller                   User           @relation("P2POrderSeller", fields: [sellerId], references: [id])
-  amount                   Decimal        @db.Decimal(36, 18)
-  fiatAmount               Decimal        @db.Decimal(18, 2)
-  status                   P2POrderStatus @default(CREATED)
+  id                        String         @id @default(cuid())
+  adId                      String
+  ad                        P2PAd          @relation(fields: [adId], references: [id])
+  buyerId                   String
+  buyer                     User           @relation("P2POrderBuyer", fields: [buyerId], references: [id])
+  sellerId                  String
+  seller                    User           @relation("P2POrderSeller", fields: [sellerId], references: [id])
+  amount                    Decimal        @db.Decimal(36, 18)
+  fiatAmount                Decimal        @db.Decimal(18, 2)
+  status                    P2POrderStatus @default(CREATED)
   escrowLedgerTransactionId String?
-  idempotencyKey           String         @unique
-  createdAt                DateTime       @default(now())
-  paidAt                   DateTime?
-  releasedAt               DateTime?
-  cancelledAt              DateTime?
+  idempotencyKey            String         @unique
+  createdAt                 DateTime       @default(now())
+  paidAt                    DateTime?
+  releasedAt                DateTime?
+  cancelledAt               DateTime?
 
-  disputes                 P2PDispute[]
+  disputes P2PDispute[]
 
   @@index([buyerId])
   @@index([sellerId])
@@ -945,16 +1092,16 @@ enum DisputeStatus {
 }
 
 model P2PDispute {
-  id              String         @id @default(cuid())
-  p2pOrderId      String
-  p2pOrder        P2POrder       @relation(fields: [p2pOrderId], references: [id])
-  openedById      String
-  reason          String
-  status          DisputeStatus  @default(OPEN)
-  resolutionNote  String?
-  resolvedById    String?
-  createdAt       DateTime       @default(now())
-  resolvedAt      DateTime?
+  id             String        @id @default(cuid())
+  p2pOrderId     String
+  p2pOrder       P2POrder      @relation(fields: [p2pOrderId], references: [id])
+  openedById     String
+  reason         String
+  status         DisputeStatus @default(OPEN)
+  resolutionNote String?
+  resolvedById   String?
+  createdAt      DateTime      @default(now())
+  resolvedAt     DateTime?
 
   @@map("p2p_disputes")
 }
@@ -964,8 +1111,8 @@ model P2PDispute {
 // ─────────────────────────────────────────────────────────────────────────
 
 model Indicator {
-  id          String @id @default(cuid())
-  key         String @unique
+  id          String  @id @default(cuid())
+  key         String  @unique
   name        String
   category    String // trend | momentum | volatility | volume | structure | pattern
   description String?
@@ -979,30 +1126,30 @@ enum SignalDirection {
 }
 
 model Signal {
-  id                   String    @id @default(cuid())
+  id                   String          @id @default(cuid())
   marketId             String
-  market               Market    @relation(fields: [marketId], references: [id])
+  market               Market          @relation(fields: [marketId], references: [id])
   timeframe            String
   direction            SignalDirection
-  entryLow             Decimal   @db.Decimal(36, 18)
-  entryHigh            Decimal   @db.Decimal(36, 18)
-  stopLoss             Decimal   @db.Decimal(36, 18)
-  takeProfit1          Decimal   @db.Decimal(36, 18)
-  takeProfit2          Decimal?  @db.Decimal(36, 18)
-  takeProfit3          Decimal?  @db.Decimal(36, 18)
-  riskReward           Decimal   @db.Decimal(6, 2)
-  confidence           Float     // 0..1 — NEVER displayed/implied as a guarantee, see docs/07 §10
-  strength              Int
+  entryLow             Decimal         @db.Decimal(36, 18)
+  entryHigh            Decimal         @db.Decimal(36, 18)
+  stopLoss             Decimal         @db.Decimal(36, 18)
+  takeProfit1          Decimal         @db.Decimal(36, 18)
+  takeProfit2          Decimal?        @db.Decimal(36, 18)
+  takeProfit3          Decimal?        @db.Decimal(36, 18)
+  riskReward           Decimal         @db.Decimal(6, 2)
+  confidence           Float // 0..1 — NEVER displayed/implied as a guarantee, see docs/07 §10
+  strength             Int
   marketRegime         String
   supportingIndicators Json
   macroContext         String?
   newsContext          String?
   reasoning            String
   modelVersion         String
-  createdAt            DateTime  @default(now())
+  createdAt            DateTime        @default(now())
   expiresAt            DateTime
 
-  result               SignalResult?
+  result SignalResult?
 
   @@index([marketId, timeframe])
   @@map("signals")
@@ -1020,13 +1167,13 @@ enum SignalOutcome {
 /// Insert-only — see docs/07-ai-signal-architecture.md §6. Aggregate performance stats are
 /// computed views over this table, never a separately-editable field.
 model SignalResult {
-  id         String        @id @default(cuid())
-  signalId   String        @unique
-  signal     Signal        @relation(fields: [signalId], references: [id])
-  outcome    SignalOutcome
-  realizedR  Float?
-  closedAt   DateTime
-  createdAt  DateTime      @default(now())
+  id        String        @id @default(cuid())
+  signalId  String        @unique
+  signal    Signal        @relation(fields: [signalId], references: [id])
+  outcome   SignalOutcome
+  realizedR Float?
+  closedAt  DateTime
+  createdAt DateTime      @default(now())
 
   @@map("signal_results")
 }
@@ -1044,32 +1191,32 @@ enum NewsSentiment {
 }
 
 model News {
-  id              String         @id @default(cuid())
-  source          String
-  title           String
-  url             String
-  importance      NewsImportance
-  sentiment       NewsSentiment
-  confidence      Float
-  affectedAssets  String[]
-  publishedAt     DateTime
-  createdAt       DateTime       @default(now())
+  id             String         @id @default(cuid())
+  source         String
+  title          String
+  url            String
+  importance     NewsImportance
+  sentiment      NewsSentiment
+  confidence     Float
+  affectedAssets String[]
+  publishedAt    DateTime
+  createdAt      DateTime       @default(now())
 
   @@index([publishedAt])
   @@map("news")
 }
 
 model MacroEvent {
-  id           String         @id @default(cuid())
-  name         String
-  category     String
-  importance   NewsImportance
-  country      String?
-  scheduledAt  DateTime
-  actual       String?
-  forecast     String?
-  previous     String?
-  createdAt    DateTime       @default(now())
+  id          String         @id @default(cuid())
+  name        String
+  category    String
+  importance  NewsImportance
+  country     String?
+  scheduledAt DateTime
+  actual      String?
+  forecast    String?
+  previous    String?
+  createdAt   DateTime       @default(now())
 
   @@index([scheduledAt])
   @@map("macro_events")
@@ -1095,7 +1242,7 @@ model SubscriptionPlan {
   signalLimitPerDay Int?
   isActive          Boolean          @default(true)
 
-  subscriptions     Subscription[]
+  subscriptions Subscription[]
 
   @@map("subscription_plans")
 }
@@ -1108,13 +1255,13 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id               String              @id @default(cuid())
+  id               String             @id @default(cuid())
   userId           String
-  user             User                @relation(fields: [userId], references: [id])
+  user             User               @relation(fields: [userId], references: [id])
   planId           String
-  plan             SubscriptionPlan    @relation(fields: [planId], references: [id])
-  status           SubscriptionStatus  @default(ACTIVE)
-  startedAt        DateTime            @default(now())
+  plan             SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status           SubscriptionStatus @default(ACTIVE)
+  startedAt        DateTime           @default(now())
   currentPeriodEnd DateTime
   cancelledAt      DateTime?
 
@@ -1184,16 +1331,16 @@ model Notification {
 // ─────────────────────────────────────────────────────────────────────────
 
 model FeeSchedule {
-  id             String   @id @default(cuid())
-  key            String   @unique // "deposit" | "withdrawal" | "trading" | "p2p" | "subscription" | "network"
-  assetId        String?
-  percentageBps  Int?
-  flatAmount     Decimal? @db.Decimal(36, 18)
-  minAmount      Decimal? @db.Decimal(36, 18)
-  maxAmount      Decimal? @db.Decimal(36, 18)
-  isActive       Boolean  @default(true)
-  updatedAt      DateTime @updatedAt
-  updatedById    String?
+  id            String   @id @default(cuid())
+  key           String   @unique // "deposit" | "withdrawal" | "trading" | "p2p" | "subscription" | "network"
+  assetId       String?
+  percentageBps Int?
+  flatAmount    Decimal? @db.Decimal(36, 18)
+  minAmount     Decimal? @db.Decimal(36, 18)
+  maxAmount     Decimal? @db.Decimal(36, 18)
+  isActive      Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+  updatedById   String?
 
   @@map("fee_schedules")
 }
@@ -1220,7 +1367,7 @@ model RiskDisclosureAgreement {
   effectiveAt  DateTime
   createdAt    DateTime @default(now())
 
-  acceptances  RiskDisclosureAcceptance[]
+  acceptances RiskDisclosureAcceptance[]
 
   @@map("risk_disclosure_agreements")
 }
@@ -1269,8 +1416,8 @@ model ManagedAccount {
   createdAt           DateTime             @default(now())
   closedAt            DateTime?
 
-  ledgerAccounts      LedgerAccount[]
-  orders              Order[]
+  ledgerAccounts LedgerAccount[]
+  orders         Order[]
 
   @@index([userId])
   @@map("managed_accounts")
@@ -1289,7 +1436,7 @@ enum StrategyPromotionStatus {
 
 /// docs/11-backtesting-architecture.md. Schema-only until MVP11.
 model TradingStrategy {
-  id              String                   @id @default(cuid())
+  id              String                  @id @default(cuid())
   name            String
   version         Int
   kind            StrategyKind
@@ -1300,8 +1447,8 @@ model TradingStrategy {
   promotionStatus StrategyPromotionStatus @default(BACKTESTING)
   createdAt       DateTime                @default(now())
 
-  managedAccounts ManagedAccount[]
-  backtestRuns    BacktestRun[]
+  managedAccounts      ManagedAccount[]
+  backtestRuns         BacktestRun[]
   investmentStrategies InvestmentStrategy[]
 
   @@unique([name, version])
@@ -1327,7 +1474,7 @@ model BacktestRun {
   status                   BacktestRunStatus @default(PENDING)
   createdAt                DateTime          @default(now())
 
-  result                   BacktestResult?
+  result BacktestResult?
 
   @@index([strategyId])
   @@map("backtest_runs")
@@ -1390,27 +1537,27 @@ enum DealingFrequency {
 /// An investment product. Every economic term is configuration — nothing about fees, limits or
 /// lock-ups is hardcoded anywhere in the application or the frontend.
 model InvestmentStrategy {
-  id          String               @id @default(cuid())
-  slug        String               @unique
-  name        String
-  description String
-  thesis      String?
+  id           String               @id @default(cuid())
+  slug         String               @unique
+  name         String
+  description  String
+  thesis       String?
   custodyModel StrategyCustodyModel @default(POOLED_NAV)
-  status      StrategyStatus       @default(DRAFT)
+  status       StrategyStatus       @default(DRAFT)
 
   /// The asset NAV is denominated in.
   baseAssetId String
-  baseAsset   Asset                @relation(fields: [baseAssetId], references: [id])
+  baseAsset   Asset  @relation(fields: [baseAssetId], references: [id])
 
   /// Set once the strategy is validated; a strategy cannot reach OPEN without one (docs/11).
   tradingStrategyId String?
   tradingStrategy   TradingStrategy? @relation(fields: [tradingStrategyId], references: [id])
 
-  minimumInvestment  Decimal   @db.Decimal(36, 18)
-  maximumInvestment  Decimal?  @db.Decimal(36, 18)
-  lockupDays         Int       @default(0)
-  redemptionNoticeDays Int     @default(0)
-  dealingFrequency   DealingFrequency @default(DAILY)
+  minimumInvestment    Decimal          @db.Decimal(36, 18)
+  maximumInvestment    Decimal?         @db.Decimal(36, 18)
+  lockupDays           Int              @default(0)
+  redemptionNoticeDays Int              @default(0)
+  dealingFrequency     DealingFrequency @default(DAILY)
 
   /// Pure profit share by default — 50% of gain above the investor's high water mark, and
   /// nothing at all when there is no profit (docs/12 §6.0). Both are per-strategy config;
@@ -1421,25 +1568,25 @@ model InvestmentStrategy {
 
   /// Hard platform ceiling of 1000 (10%) — docs/10 §4, and load-bearing under a 50% profit
   /// share because the manager takes half the upside and none of the downside (docs/12 §6.0).
-  maxDrawdownBps      Int @default(1000)
-  maxAssetExposureBps Int @default(10000)
-  maxLeverageBps      Int @default(10000)
+  maxDrawdownBps      Int  @default(1000)
+  maxAssetExposureBps Int  @default(10000)
+  maxLeverageBps      Int  @default(10000)
   dailyLossLimitBps   Int?
 
   benchmarkSymbol String?
 
   /// Unit register. navPerUnit is derived (poolNAV / totalUnits) and lives on NavSnapshot —
   /// it is deliberately NOT a column here, so there is no field for anyone to hand-edit.
-  totalUnits Decimal @db.Decimal(36, 18) @default(0)
+  totalUnits Decimal @default(0) @db.Decimal(36, 18)
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   openedAt  DateTime?
   closedAt  DateTime?
 
-  positions InvestmentPosition[]
-  navSnapshots NavSnapshot[]
-  subscriptions SubscriptionRequest[]
-  redemptions   RedemptionRequest[]
+  positions      InvestmentPosition[]
+  navSnapshots   NavSnapshot[]
+  subscriptions  SubscriptionRequest[]
+  redemptions    RedemptionRequest[]
   ledgerAccounts LedgerAccount[]
 
   @@index([status])
@@ -1455,21 +1602,21 @@ model InvestmentPosition {
   strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
 
   /// The claim itself. Value = units × navPerUnit.
-  units      Decimal @db.Decimal(36, 18) @default(0)
+  units     Decimal @default(0) @db.Decimal(36, 18)
   /// Total contributed less capital returned — the denominator for return %.
-  costBasis  Decimal @db.Decimal(36, 18) @default(0)
+  costBasis Decimal @default(0) @db.Decimal(36, 18)
 
   /// High water mark as a UNIT PRICE, not a dollar amount — the only form that is correct when
   /// investors enter at different times (docs/12 §6.1). Ratchets up on crystallisation and
   /// never decreases; written by the fee engine alone. Lowering it is indistinguishable from
   /// charging twice for the same performance, so no administrative path to do so exists.
-  hwmUnitPrice Decimal @db.Decimal(36, 18) @default(0)
+  hwmUnitPrice Decimal @default(0) @db.Decimal(36, 18)
 
   /// Accrued but not yet crystallised. Deliberately NOT ledger postings: an accrual moves no
   /// assets, and posting it would drag every other investor's navPerUnit down for a fee they
   /// do not owe (docs/12 §1.1).
-  accruedMgmtFee Decimal @db.Decimal(36, 18) @default(0)
-  accruedPerfFee Decimal @db.Decimal(36, 18) @default(0)
+  accruedMgmtFee Decimal @default(0) @db.Decimal(36, 18)
+  accruedPerfFee Decimal @default(0) @db.Decimal(36, 18)
 
   lockedUntil DateTime?
   createdAt   DateTime  @default(now())
@@ -1498,16 +1645,16 @@ model NavSnapshot {
   totalUnits Decimal  @db.Decimal(36, 18)
   navPerUnit Decimal  @db.Decimal(36, 18)
 
-  cashComponent     Decimal @db.Decimal(36, 18) @default(0)
-  positionComponent Decimal @db.Decimal(36, 18) @default(0)
+  cashComponent     Decimal @default(0) @db.Decimal(36, 18)
+  positionComponent Decimal @default(0) @db.Decimal(36, 18)
 
   /// Where the marks came from. A manager cannot supply a price — whoever sets prices authors
   /// their own performance fee.
-  markSource String
+  markSource     String
   /// Per-asset provenance: quantity, price, value, provider and the provider's own observation
   /// time. This is what makes a historical NAV auditable rather than merely recorded — without
   /// it, "the pool was worth X" is an assertion nobody can check.
-  marks      Json?
+  marks          Json?
   /// True when this snapshot is a dealing point: subscriptions and redemptions settle at it.
   isDealingPoint Boolean @default(false)
 
@@ -1532,7 +1679,7 @@ model SubscriptionRequest {
   strategyId String
   strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
 
-  amount Decimal @db.Decimal(36, 18)
+  amount Decimal                   @db.Decimal(36, 18)
   status SubscriptionRequestStatus @default(PENDING)
 
   /// Set at settlement — the dealing point this subscribed at, and what it bought.
@@ -1543,10 +1690,10 @@ model SubscriptionRequest {
   /// a recorded acceptance of the current risk disclosure cannot be created.
   acceptanceId String
 
-  idempotencyKey String @unique
-  createdAt   DateTime  @default(now())
-  settledAt   DateTime?
-  cancelledAt DateTime?
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  settledAt      DateTime?
+  cancelledAt    DateTime?
 
   @@index([strategyId, status])
   @@index([userId])
@@ -1566,21 +1713,21 @@ model FeeAccrual {
   positionId String
   position   InvestmentPosition @relation(fields: [positionId], references: [id])
 
-  kind       FeeAccrualKind
-  periodStart DateTime
-  periodEnd   DateTime
+  kind         FeeAccrualKind
+  periodStart  DateTime
+  periodEnd    DateTime
   /// The rate actually applied, copied at accrual time — a later config change must not
   /// retroactively alter what was charged.
-  rateBps    Int
+  rateBps      Int
   /// What the rate was applied to.
-  baseAmount Decimal @db.Decimal(36, 18)
+  baseAmount   Decimal        @db.Decimal(36, 18)
   /// For PERFORMANCE: the HWM unit price the gain was measured above.
-  hwmUnitPrice Decimal? @db.Decimal(36, 18)
-  navPerUnit   Decimal? @db.Decimal(36, 18)
-  amount     Decimal @db.Decimal(36, 18)
+  hwmUnitPrice Decimal?       @db.Decimal(36, 18)
+  navPerUnit   Decimal?       @db.Decimal(36, 18)
+  amount       Decimal        @db.Decimal(36, 18)
 
   /// Set when this accrual is settled by FEE_CRYSTALLISATION.
-  crystallisedAt          DateTime?
+  crystallisedAt            DateTime?
   crystallisedTransactionId String?
 
   createdAt DateTime @default(now())
@@ -1609,7 +1756,7 @@ model RedemptionRequest {
   /// Units the investor asked to redeem. Denominated in units, not currency, because the
   /// currency value is not known until the dealing-point NAV is struck — quoting an amount up
   /// front would be quoting a price the platform cannot honour.
-  units  Decimal @db.Decimal(36, 18)
+  units  Decimal                 @db.Decimal(36, 18)
   status RedemptionRequestStatus @default(PENDING)
 
   /// The earliest dealing point this may settle at, stamped from lock-up and notice period at
@@ -1618,14 +1765,14 @@ model RedemptionRequest {
 
   settledSnapshotId String?
   /// Set at settlement: gross proceeds, fees crystallised, and what actually reached the wallet.
-  grossAmount Decimal? @db.Decimal(36, 18)
-  feesCharged Decimal? @db.Decimal(36, 18)
-  netAmount   Decimal? @db.Decimal(36, 18)
+  grossAmount       Decimal? @db.Decimal(36, 18)
+  feesCharged       Decimal? @db.Decimal(36, 18)
+  netAmount         Decimal? @db.Decimal(36, 18)
 
-  idempotencyKey String @unique
-  createdAt   DateTime  @default(now())
-  settledAt   DateTime?
-  cancelledAt DateTime?
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  settledAt      DateTime?
+  cancelledAt    DateTime?
 
   @@index([strategyId, status])
   @@index([userId])
