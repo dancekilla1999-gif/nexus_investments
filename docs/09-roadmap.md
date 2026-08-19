@@ -691,11 +691,45 @@ result is *under* the bar. The test now checks the regime the metric is actually
 walk-forward runner, which trains the primary only. Sequence models, ensembling and calibration
 are MVP36.
 
-### MVP35 — Event-driven backtester
-Replay clock with a data view that structurally cannot return the future; fees, spread,
-size-dependent slippage, partial fills, latency, funding, liquidity caps and market impact.
-*Acceptance:* a zero-cost run and a realistic-cost run differ materially on the same strategy;
-attempting to read a future bar is a type error, not a convention.
+### MVP35 — Event-driven backtester — ✅ done
+Replay clock, a market view with no way to name a future timestamp, and a cost model covering
+fees, spread, participation-based slippage, square-root impact, partial fills, liquidity caps and
+funding. 29 unit tests, 6 e2e over real stored bars and live OKX data.
+
+*Acceptance — both met.*
+
+**Reading the future is inexpressible, not merely discouraged.** `MarketView` has no method that
+accepts a timestamp — `bars(count)` and `latest()` are relative to the clock, `now` is a getter,
+and `nextBarForExecution()` lives on the engine's class rather than the interface. The test puts
+the offending calls inside a function that is **never invoked**, because `@ts-expect-error`
+suppresses the compile error without stopping the line from executing; asserting a runtime throw
+would test the wrong thing entirely.
+
+**Costs change the answer, demonstrated as a number.** A one-bar momentum strategy on a 0.3%
+zigzag makes +58.80 frictionless and loses 68.49 with realistic friction. The amplitude was
+chosen by sweeping rather than assumed: at 3% the same strategy nets +459 after costs and the
+demonstration would have shown nothing. That sweep is recorded in the test, because the fixture's
+calibration is the part a reader would otherwise have to take on trust.
+
+**Modelling decisions the tests pin:**
+
+- **Orders fill in the next bar, never at the decision close.** Filling at the close of the bar a
+  decision was made on is the most flattering backtest bug available — it hands the strategy a
+  price that existed at the instant it decided, which no venue offers.
+- **Slippage is participation-based, not a flat constant.** A flat figure makes size free, which
+  is how a strategy backtests brilliantly at a size the market could never absorb. Square-root
+  impact sits on top.
+- **A fill is capped at a share of the bar's volume**, and the shortfall is reported rather than
+  silently filled.
+- **A reversal is a close plus an open**, not one continuous position — merging them would halve
+  the trade count and corrupt every per-trade statistic.
+- **Funding accrues per window held**, not netted at the end.
+- **A frictionless run is flagged `frictionless: true`**, so no report can quote it as real, and
+  `ResearchService.backtest` returns both runs together with the gap between them.
+
+*Stated rather than hidden:* limit fills do not model queue position — an order at a level the bar
+merely reached is treated as filled, which is optimistic. A limit strategy's backtest is therefore
+more favourable than this simulator can currently prove.
 
 ### MVP36 — Models, calibration, ensemble, regime
 LightGBM primary and meta models, a mandatory logistic-regression baseline, per-domain models,

@@ -13,6 +13,7 @@ import { TIMEFRAME_MS, Timeframe } from '../src/marketdata/ohlcv-provider.interf
 import { PLATFORM_SYSTEM_USER_EMAIL, PLATFORM_SYSTEM_USER_ID } from '../src/ledger/ledger.constants';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { REDIS_CLIENT } from '../src/redis/redis.constants';
+import { ordersForTarget, Strategy } from '../src/backtest/backtest-engine';
 import { ResearchService } from '../src/research/research.service';
 import { resetDatabase } from './utils/reset-database';
 
@@ -348,6 +349,90 @@ describe('Research harness (e2e)', () => {
       // Real market data, so a large share of columns must be populated.
       const populated = dataset.X[dataset.X.length - 1].filter((v) => v !== null).length;
       expect(populated / dataset.featureNames.length).toBeGreaterThan(0.8);
+    }, 600_000);
+  });
+
+  // ── Backtesting over stored bars (MVP35) ────────────────────────────────
+
+  describe('the event-driven backtester over real stored bars', () => {
+    /** One-bar momentum: high turnover, small per-trade edge. The cost-sensitive shape. */
+    const momentum: Strategy = {
+      name: 'one-bar-momentum',
+      warmupBars: 5,
+      onBar: (view, position) => {
+        const w = view.bars(2);
+        if (w.length < 2) return [];
+        return ordersForTarget(position, w.close[1] > w.close[0] ? 0.01 : -0.01, 'momentum');
+      },
+    };
+
+    it('runs both cost models and reports the gap between them', async () => {
+      await seed(600, END);
+      const { realistic, frictionless, costOfTrading } = await research.backtest({
+        strategy: momentum, symbol: SYMBOL, timeframe: TF, bars: 500,
+      });
+
+      expect(realistic.barsSimulated).toBeGreaterThan(400);
+      expect(realistic.trades.length).toBeGreaterThan(50);
+
+      // Trading is never free, so the realistic run must finish behind the frictionless one.
+      // The gap is the most informative number in the report: how much of an apparent edge is
+      // edge, and how much is an artefact of pretending trading costs nothing.
+      expect(costOfTrading).toBeGreaterThan(0);
+      expect(realistic.finalEquity).toBeLessThan(frictionless.finalEquity);
+    }, 300_000);
+
+    it('labels the frictionless run as frictionless, so a report cannot quote it as real', async () => {
+      await seed(400, END);
+      const { realistic, frictionless } = await research.backtest({
+        strategy: momentum, symbol: SYMBOL, timeframe: TF, bars: 300,
+      });
+      expect(frictionless.frictionless).toBe(true);
+      expect(realistic.frictionless).toBe(false);
+    }, 300_000);
+
+    it('attributes the cost to fees, spread, slippage and impact separately', async () => {
+      await seed(600, END);
+      const { realistic } = await research.backtest({
+        strategy: momentum, symbol: SYMBOL, timeframe: TF, bars: 500,
+      });
+
+      // A fee problem and a size problem have completely different fixes, so one lump is not a
+      // useful answer.
+      expect(realistic.totalFees).toBeGreaterThan(0);
+      expect(realistic.totalSpreadCost).toBeGreaterThan(0);
+      expect(realistic.totalSlippageCost).toBeGreaterThan(0);
+      expect(realistic.totalImpactCost).toBeGreaterThan(0);
+    }, 300_000);
+
+    it('cannot make money from a driftless walk once costs are real', async () => {
+      await seed(700, END);
+      const { realistic } = await research.backtest({
+        strategy: momentum, symbol: SYMBOL, timeframe: TF, bars: 600,
+      });
+      // No edge, real friction. Any other answer would mean the simulator is lying.
+      expect(realistic.finalEquity).toBeLessThan(realistic.initialEquity);
+    }, 300_000);
+
+    it('refuses rather than backtesting a strategy on too little history', async () => {
+      // Fewer bars than the strategy's own warmup plus a margin. Thirty would have been plenty
+      // for a five-bar warmup — the guard is against a strategy that cannot even start, not
+      // against a short backtest.
+      await seed(8, END);
+      await expect(
+        research.backtest({ strategy: momentum, symbol: SYMBOL, timeframe: TF, bars: 500 }),
+      ).rejects.toThrow(/Not enough history/i);
+    }, 120_000);
+
+    liveIt('runs against live OKX bars', async () => {
+      await ingestion.ingest(SYMBOL, TF, 800, { backfill: true });
+      const { realistic, frictionless, costOfTrading } = await research.backtest({
+        strategy: momentum, symbol: SYMBOL, timeframe: TF, bars: 700,
+      });
+
+      expect(realistic.barsSimulated).toBeGreaterThan(500);
+      expect(costOfTrading).toBeGreaterThan(0);
+      expect(frictionless.trades.length).toBe(realistic.trades.length);
     }, 600_000);
   });
 

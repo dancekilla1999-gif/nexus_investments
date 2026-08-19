@@ -1,5 +1,63 @@
 # Changelog
 
+## MVP35 — Event-driven backtester
+
+**Date:** 2026-08-19
+
+A replay clock, one bar at a time, and a strategy that can only see what had closed.
+
+### Reading the future is inexpressible
+
+`MarketView` exposes `bars(count)`, `latest()`, `feature(id)` and a read-only `now`. **No method
+takes a timestamp.** A vectorised backtest holds the whole series in scope and relies on the
+author never indexing past the current bar; here "give me bar t+1" is not a call that can be
+written, because there is no parameter through which `t+1` could be named. `nextBarForExecution()`
+exists — the fill logic needs it — and lives on the engine's class rather than the interface, so a
+strategy holding a view cannot reach it.
+
+The test puts the offending calls inside a function that is **never invoked**. `@ts-expect-error`
+suppresses the compile error but does not stop the line executing, so calling them would throw at
+runtime and test the wrong thing: the claim is that the code does not compile, not that it fails
+when run.
+
+### Costs change the answer, as a number
+
+One-bar momentum on a 0.3% zigzag: **+58.80 frictionless, −68.49 with realistic friction.**
+
+The amplitude was swept rather than guessed. At 3% the same strategy nets +459 after costs and
+demonstrates nothing; at 1%, +68; 0.3% is where an apparently excellent strategy flips to a loss.
+The sweep is recorded in the test, because a fixture's calibration is otherwise something a reader
+has to take on trust.
+
+### What the model charges for, and why each one
+
+- **Fills happen in the next bar.** Filling at the decision bar's close is the most flattering
+  backtest bug there is — a price that existed at the instant of the decision, which no venue
+  offers.
+- **Slippage is participation-based.** A flat constant makes size free, which is how a strategy
+  backtests brilliantly at a size the market could never absorb. Square-root impact on top.
+- **Fills are capped at a share of the bar's volume**, and the rejection is counted rather than
+  quietly filled.
+- **Funding accrues per window held**, not netted at the end. On multi-day holds it frequently
+  exceeds the trading fees.
+- **A reversal is a close plus an open.** Merging them would halve the trade count and corrupt
+  every per-trade statistic.
+- **Costs are attributed separately** — fees, spread, slippage, impact — because a fee problem and
+  a size problem have completely different fixes.
+
+`ResearchService.backtest` runs **both** cost models and returns the gap. Both, always: the
+difference is the most informative number in a backtest report, and reporting the frictionless
+figure alone is the most common way a genuine backtest still misleads. The frictionless result
+carries `frictionless: true` so it cannot be quoted as real by omission.
+
+### Stated rather than hidden
+
+Limit fills do not model queue position: an order at a level the bar merely reached is treated as
+filled. In reality you may sit behind enough size that the level trades without you, so a limit
+strategy's backtest is more favourable than this simulator can prove.
+
+**Tests:** 251 unit + 295 e2e = **546 passing**, against real PostgreSQL, Redis and live OKX data.
+
 ## MVP34 — Labelling and validation harness
 
 **Date:** 2026-08-19

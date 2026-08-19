@@ -24,6 +24,8 @@ import {
   skewness,
 } from './statistics';
 import { predictProbabilities, rocAuc, trainLogistic } from './logistic-regression';
+import { BacktestEngine, BacktestResult, Strategy } from '../backtest/backtest-engine';
+import { CostModel, FRICTIONLESS, REALISTIC_COSTS } from '../backtest/execution-simulator';
 
 export interface DatasetSpec {
   symbol: string;
@@ -349,6 +351,58 @@ export class ResearchService {
       embargoedTotal: splits.reduce((a, s) => a + s.embargoedCount, 0),
       auc,
       foldAucs,
+    };
+  }
+
+  /**
+   * Runs a strategy through the event-driven backtester over real stored bars, **twice** — once
+   * frictionless and once with realistic costs — and reports both (docs/18 §4.2).
+   *
+   * Both, always, and never the frictionless one alone. The gap between them is the single most
+   * informative number in a backtest report: it says how much of an apparent edge is edge and how
+   * much is an artefact of pretending trading is free. Reporting only the friction-free figure is
+   * the most common way a genuine backtest still misleads, and the shape of this method is what
+   * stops it happening by omission.
+   */
+  async backtest(params: {
+    strategy: Strategy;
+    symbol: string;
+    timeframe: Timeframe;
+    bars: number;
+    asOf?: Date;
+    initialEquity?: number;
+    costs?: CostModel;
+  }): Promise<{ realistic: BacktestResult; frictionless: BacktestResult; costOfTrading: number }> {
+    const asOf = params.asOf ?? new Date();
+    const candles = await this.candles.knowableAt({
+      symbol: params.symbol,
+      timeframe: params.timeframe,
+      asOf,
+      limit: params.bars,
+    });
+    if (candles.length < params.strategy.warmupBars + 10) {
+      throw new Error(
+        `Not enough history for ${params.symbol} ${params.timeframe}: ${candles.length} bars, ` +
+          `the strategy needs ${params.strategy.warmupBars + 10}.`,
+      );
+    }
+
+    const initialEquity = params.initialEquity ?? 100_000;
+    const run = (costs: CostModel) =>
+      new BacktestEngine({ initialEquity, costs }).run({
+        strategy: params.strategy,
+        symbol: params.symbol,
+        timeframe: params.timeframe,
+        candles,
+      });
+
+    const realistic = run(params.costs ?? REALISTIC_COSTS);
+    const frictionless = run(FRICTIONLESS);
+
+    return {
+      realistic,
+      frictionless,
+      costOfTrading: frictionless.finalEquity - realistic.finalEquity,
     };
   }
 
