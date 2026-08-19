@@ -23,3 +23,32 @@ export async function verifyPassword(hash: string, plaintext: string): Promise<b
     return false;
   }
 }
+
+// A fixed argon2id hash of an unguessable placeholder, computed once and reused for every
+// "no such account" login attempt. Never reveals anything itself — it isn't derived from any
+// real user's data — it exists purely so a non-existent account still pays the same argon2id
+// verify cost as a real one. Lazily memoized: computing it eagerly at import time would push a
+// ~20MB, timeCost=2 hash into every cold start (tests included) for a value nothing needs yet.
+let dummyHash: Promise<string> | undefined;
+function getDummyHash(): Promise<string> {
+  dummyHash ??= argon2.hash('nexus-timing-defense-placeholder-9f3c2a', ARGON2_OPTIONS);
+  return dummyHash;
+}
+
+/**
+ * Same cost whether or not `hash` is real. Login must not let an attacker distinguish
+ * "no such account" from "wrong password" by response latency — see CLAUDE.md §5 and
+ * docs/05-security-architecture.md §1. A `null` hash still runs a full argon2id verify (against
+ * the placeholder above) before unconditionally returning `false`, so both branches cost the
+ * same ~argon2id verify time regardless of which one you're on.
+ */
+export async function verifyPasswordConstantTime(
+  hash: string | null | undefined,
+  plaintext: string,
+): Promise<boolean> {
+  if (hash == null) {
+    await verifyPassword(await getDummyHash(), plaintext);
+    return false;
+  }
+  return verifyPassword(hash, plaintext);
+}

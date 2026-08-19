@@ -22,7 +22,7 @@ import { RegisterDto } from './dto/register.dto';
 import { VerifyLoginTwoFactorDto } from './dto/verify-login-2fa.dto';
 import { Verify2faDto } from './dto/verify-2fa.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
-import { hashPassword, verifyPassword } from './password.util';
+import { hashPassword, verifyPasswordConstantTime } from './password.util';
 import {
   generateBackupCodes,
   generateTotpSecret,
@@ -167,8 +167,13 @@ export class AuthService {
 
   async login(dto: LoginDto, meta: RequestMeta): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    // Constant-shaped response whether the email exists or not — do not leak which.
-    const passwordOk = user ? await verifyPassword(user.passwordHash, dto.password) : false;
+    // Constant-time whether the email exists or not: a missing user still pays the full
+    // argon2id verify cost (against a fixed placeholder hash) before returning false, so
+    // response latency can't be used to enumerate registered emails. A cheap `user ? verify :
+    // false` shortcut here previously made "no such account" return near-instantly while a
+    // real account paid ~memoryCost=19MB/timeCost=2 of argon2id — same response body, very
+    // different timing.
+    const passwordOk = await verifyPasswordConstantTime(user?.passwordHash, dto.password);
     if (!user || !passwordOk) {
       await this.audit.record({
         actorType: AuditActorType.USER,

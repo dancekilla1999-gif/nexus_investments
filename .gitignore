@@ -37,6 +37,7 @@ coverage/
 # prisma
 apps/api/prisma/dev.db
 apps/api/generated/
+dump.rdb
 
 # secrets/compliance attestations (never committed for real)
 config/compliance/attestation.json
