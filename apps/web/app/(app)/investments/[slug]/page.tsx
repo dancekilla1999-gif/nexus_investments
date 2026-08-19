@@ -269,11 +269,12 @@ export default function StrategyDetailPage() {
         <div className="flex items-start gap-2">
           <Lock className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" />
           <p className="text-sm text-ink-muted">
-            <span className="text-ink">Subscribing ships in MVP13.</span> The accounting behind it
-            already exists and is tested: units, pooled custody, and a database-level boundary that
-            makes it structurally impossible to move pool assets to the platform outside the fee
-            schedule shown above. What is missing is the dealing-point machinery that issues units
-            at an independently struck valuation.
+            <span className="text-ink">Subscribing is live on the API; the control on this page is
+            not wired up yet.</span> Units, pooled custody, the dealing-point machinery that issues
+            them at an independently struck valuation, and the high water mark that governs the fee
+            are all built and tested. So is the database-level boundary that makes it structurally
+            impossible to move pool assets to the platform outside the fee schedule shown above.
+            What is missing here is only the button.
           </p>
         </div>
       </Card>

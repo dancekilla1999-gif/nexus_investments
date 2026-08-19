@@ -85,13 +85,13 @@ export default function InvestmentsPage() {
             <TrendingUp className="h-4 w-4 text-ink-muted" />
             <span className="text-sm font-medium">Subscribing</span>
           </div>
-          <Badge tone="neutral">MVP13</Badge>
+          <Badge tone="positive">Live</Badge>
         </div>
         <p className="text-sm text-ink-muted">
-          The accounting a subscription posts through is built and tested — units, pooled custody,
-          and the boundary that keeps pool assets structurally separate from platform money. What
-          ships next is the dealing-point machinery that issues units at an independently struck
-          NAV, so that subscribing at a stale price cannot dilute anyone.
+          The whole path is built and tested — units, pooled custody, dealing points that issue
+          units at an independently struck NAV so nobody buys in at a stale price, and the boundary
+          that keeps pool assets structurally separate from platform money. The subscribe control on
+          these pages is the one piece still to be wired to it.
         </p>
       </Card>
     </div>
@@ -180,8 +180,8 @@ function StrategyCard({ strategy }: { strategy: InvestmentStrategySummary }) {
       <div className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-xs text-ink-muted">
         <Lock className="h-3.5 w-3.5 shrink-0" />
         <span>
-          Subscriptions open in MVP13. Terms above are live from the platform&apos;s fee engine, not
-          placeholder copy.
+          Terms above are live from the platform&apos;s fee engine, not placeholder copy. The
+          subscribe control is not wired to the web yet — the API path behind it is.
         </span>
       </div>
 
