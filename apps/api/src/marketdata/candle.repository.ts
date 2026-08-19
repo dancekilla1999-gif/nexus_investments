@@ -84,9 +84,28 @@ export class CandleRepository {
     timeframe: Timeframe;
     bars: OhlcvBar[];
     ingestTime?: Date;
+    /**
+     * How to stamp `ingestTime` — when the platform is treated as having learned each bar.
+     *
+     * `'now'` (the default) is correct for live polling: we learned the bar when we fetched it.
+     *
+     * `'bar-close'` stamps each bar with its own close, asserting it was knowable the moment it
+     * closed. **Valid only for sources that do not revise history**, which exchange OHLCV does
+     * not — a closed spot candle from two weeks ago is the same candle whether it was fetched
+     * then or now. It is emphatically NOT valid for macro releases or on-chain flow data, both
+     * of which are revised and back-filled; using it there would recreate exactly the leak
+     * `macro_observations`' vintages exist to prevent.
+     *
+     * This exists because a backfill stamped `'now'` is invisible to every historical query — the
+     * point-in-time filter correctly reports that nothing was knowable back then — so a research
+     * dataset built from fresh history comes back empty. Found by a live e2e test doing precisely
+     * that. The choice is explicit rather than inferred, because the wrong answer is silent.
+     */
+    ingestTimePolicy?: 'now' | 'bar-close';
   }): Promise<number> {
     if (params.bars.length === 0) return 0;
 
+    const policy = params.ingestTimePolicy ?? 'now';
     const ingestTime = params.ingestTime ?? new Date();
 
     const data: Prisma.MarketCandleCreateManyInput[] = params.bars
@@ -106,7 +125,7 @@ export class CandleRepository {
         close: bar.close,
         volume: bar.volume,
         trades: bar.trades,
-        ingestTime,
+        ingestTime: policy === 'bar-close' ? bar.closeTime : ingestTime,
       }));
 
     if (data.length === 0) return 0;

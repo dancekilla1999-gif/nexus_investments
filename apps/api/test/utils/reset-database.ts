@@ -16,6 +16,7 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 export async function resetDatabase(prisma: PrismaService): Promise<void> {
   await prisma.$executeRawUnsafe(`
     TRUNCATE
+      research_experiments,
       feature_vectors,
       market_candles,
       macro_observations,

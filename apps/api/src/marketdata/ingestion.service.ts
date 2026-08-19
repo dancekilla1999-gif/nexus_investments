@@ -69,7 +69,25 @@ export class IngestionService implements OnApplicationBootstrap, OnModuleDestroy
    * instant, and letting the clock drift across a batch would make a point-in-time query at a
    * boundary return some of a response but not all of it.
    */
-  async ingest(symbol: string, timeframe: Timeframe, limit = 300): Promise<IngestResult> {
+  async ingest(
+    symbol: string,
+    timeframe: Timeframe,
+    limit = 300,
+    options: {
+      /**
+       * Stamp each bar as knowable at its own close rather than at the fetch instant.
+       *
+       * For a historical backfill this is the honest stamp: exchange OHLCV is not revised, so a
+       * closed candle was knowable the moment it closed regardless of when we got around to
+       * fetching it. Without it a backfill is invisible to every historical query — correctly,
+       * since stamped `now` it genuinely was not knowable before now — and a research dataset
+       * built from fresh history comes back empty.
+       *
+       * Never set this for a revisable source. See `CandleRepository.insertMany`.
+       */
+      backfill?: boolean;
+    } = {},
+  ): Promise<IngestResult> {
     const outcome = await this.registry.fetchOhlcv({ symbol, timeframe, limit });
 
     if (!outcome) {
@@ -83,6 +101,7 @@ export class IngestionService implements OnApplicationBootstrap, OnModuleDestroy
       timeframe,
       bars: outcome.bars,
       ingestTime: new Date(),
+      ingestTimePolicy: options.backfill ? 'bar-close' : 'now',
     });
 
     return {

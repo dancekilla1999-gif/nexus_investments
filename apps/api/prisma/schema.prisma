@@ -922,6 +922,47 @@ model FeatureVectorRecord {
   @@map("feature_vectors")
 }
 
+/// Every research run, counted (docs/18 §3.3).
+///
+/// This table is the reason the deflated Sharpe means anything. Try five hundred configurations
+/// and the best will look excellent by chance alone — that is the mechanism by which most
+/// published backtests are wrong, and it is invisible to every individual step of an otherwise
+/// correct process, because each configuration *was* tested honestly and only the selection
+/// across them was not.
+///
+/// The counter is therefore owned by the harness, not by the researcher. It is append-only and
+/// scoped by (symbol, timeframe, label definition), so exploration is free but is not free of
+/// consequence, and starting a new notebook does not reset it.
+model ResearchExperiment {
+  id String @id @default(cuid())
+
+  /// What was being searched over. Trials are counted within a scope, because a search on BTC 1h
+  /// tells you nothing about how hard you looked at ETH 4h.
+  scope String
+
+  symbol    String
+  timeframe String
+  /// Barrier parameters and horizon, serialised. Part of the scope: changing the label is a new
+  /// question, not another attempt at the same one.
+  labelDefinition String
+
+  /// The configuration tried, for reproducibility.
+  config Json
+  /// Out-of-sample AUC, or null when the run produced none.
+  auc    Float?
+  /// Out-of-sample Sharpe of the resulting returns, if the run produced trades.
+  sharpe Float?
+  /// Whether every negative control passed. A run that failed one is still counted — looking is
+  /// what costs, and a failed control does not un-look.
+  controlsPassed Boolean @default(false)
+
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([scope, createdAt])
+  @@map("research_experiments")
+}
+
 /// A macroeconomic series — CPI, NFP, a policy rate. Reference data, not observations.
 model MacroSeries {
   id         String @id @default(cuid())

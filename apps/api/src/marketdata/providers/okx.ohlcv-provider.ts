@@ -67,15 +67,60 @@ export class OkxOhlcvProvider implements OhlcvProvider {
     return symbol.replace('/', '-');
   }
 
+  /**
+   * Closed bars, newest `limit` of them, paginating backwards when more than one page is asked for.
+   *
+   * OKX caps `/candles` at 300 rows. A research harness that can only ever see 300 bars is not a
+   * research harness — 300 hourly bars is under two weeks, which is not enough to label, split
+   * and walk forward over. Deeper history comes from `/history-candles` with an `after` cursor,
+   * walking backwards until the request is satisfied or the venue runs out.
+   */
   async fetchOhlcv(query: OhlcvQuery): Promise<OhlcvBar[] | null> {
     const bar = OKX_BAR[query.timeframe];
     if (!bar) return null;
 
-    // Ask for one extra: the newest element may be the forming bar, which is dropped below.
+    const collected = new Map<number, OhlcvBar>();
+    let cursor: number | null = null;
+    let pages = 0;
+    // A hard page cap so a misbehaving cursor cannot spin. 40 pages is 4000 bars, which is well
+    // past what any single call should be asking for.
+    const maxPages = Math.min(40, Math.ceil(query.limit / 100) + 1);
+
+    while (collected.size < query.limit && pages < maxPages) {
+      const page: OhlcvBar[] | null = await this.fetchPage(query, bar, cursor);
+      pages++;
+      if (!page || page.length === 0) break;
+
+      for (const b of page) collected.set(b.openTime.getTime(), b);
+
+      const oldest = Math.min(...page.map((b) => b.openTime.getTime()));
+      // `after` means "strictly older than this timestamp" on OKX. If the cursor does not move,
+      // the venue has no more history and looping again would fetch the same page forever.
+      if (cursor !== null && oldest >= cursor) break;
+      cursor = oldest;
+    }
+
+    if (collected.size === 0) return null;
+
+    const bars = [...collected.values()].sort((a, b) => a.openTime.getTime() - b.openTime.getTime());
+    return bars.slice(-query.limit);
+  }
+
+  /**
+   * One page. `cursor` null asks the live endpoint for the newest bars; a cursor asks the history
+   * endpoint for bars strictly older than it.
+   */
+  private async fetchPage(
+    query: OhlcvQuery,
+    bar: string,
+    cursor: number | null,
+  ): Promise<OhlcvBar[] | null> {
+    const endpoint = cursor === null ? 'candles' : 'history-candles';
     const url =
-      `${this.baseUrl}/api/v5/market/candles` +
+      `${this.baseUrl}/api/v5/market/${endpoint}` +
       `?instId=${encodeURIComponent(this.instId(query.symbol))}` +
-      `&bar=${bar}&limit=${Math.min(query.limit + 1, 300)}`;
+      `&bar=${bar}&limit=${cursor === null ? Math.min(query.limit + 1, 300) : 100}` +
+      (cursor === null ? '' : `&after=${cursor}`);
 
     let payload: OkxResponse;
     try {
@@ -121,9 +166,6 @@ export class OkxOhlcvProvider implements OhlcvProvider {
       });
     }
 
-    if (bars.length === 0) return null;
-
-    bars.sort((a, b) => a.openTime.getTime() - b.openTime.getTime());
-    return bars.slice(-query.limit);
+    return bars.length === 0 ? null : bars;
   }
 }

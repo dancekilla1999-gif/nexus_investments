@@ -18,6 +18,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { DepositsModule } from './deposits/deposits.module';
 import { InvestmentsModule } from './investments/investments.module';
 import { FeaturesModule } from './features/features.module';
+import { ResearchModule } from './research/research.module';
 import { MarketDataModule } from './marketdata/marketdata.module';
 import { NavModule } from './nav/nav.module';
 import { HealthModule } from './health/health.module';
@@ -53,6 +54,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     DepositsModule,
     MarketDataModule,
     FeaturesModule,
+    ResearchModule,
     NavModule,
     InvestmentsModule,
     HealthModule,

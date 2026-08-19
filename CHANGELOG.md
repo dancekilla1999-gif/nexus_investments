@@ -1,5 +1,80 @@
 # Changelog
 
+## MVP34 — Labelling and validation harness
+
+**Date:** 2026-08-19
+
+The apparatus that decides whether a model's number is evidence. Not a model — the thing that
+judges models, and the part that is much harder to get right.
+
+### The acceptance criterion
+
+Both negative controls behave. Permuting the labels centres the AUC on chance; handing the model
+the next bar's features improves it. And the detector is itself tested: a dataset whose feature
+*is* the label fails the shifted-feature control with a "lookahead leak" verdict, so the control
+is shown catching the thing it exists for rather than merely passing on clean data.
+
+The shifted-feature control deserves its reputation. It is the cheapest, most reliable leak
+detector available and almost nobody runs it: if giving the model tomorrow's data does not help,
+the features already contain tomorrow.
+
+### Decisions, and why they go the pessimistic way
+
+**An ambiguous bar resolves as the stop.** One bar spanning both barriers, with no finer path to
+say which came first, is assumed to be a loss. Assuming the target turns every violent bar into a
+win — worth an enormous amount of fictional performance, and almost never noticed because the
+resulting equity curve looks merely very good rather than impossible.
+
+**Timeouts are dropped, not folded into one side.** Calling a timeout "not up" teaches the model
+that a flat market is a short, which is a different and wrong claim.
+
+**Barriers are sized from bars strictly before entry.** Including the entry bar's own return would
+size the barrier using the move the label is about to measure.
+
+**Labels are weighted by uniqueness.** Overlapping horizons are not independent observations; a
+heavily-overlapped stretch otherwise contributes the same information many times and every
+confidence interval derived from the row count is too narrow.
+
+**The trial counter is append-only and scoped.** A counter that can be decremented is not a
+counter, and deleting a disappointing run is exactly the behaviour the deflated Sharpe exists to
+price in. The verdict function is written to decline: on a synthetic random walk it says so.
+
+### Three fixes the tests found
+
+**The shuffled-label control was not a test.** One permutation is a single draw from the null
+distribution, and comparing it to a fixed threshold fails on ordinary noise — AUC's standard error
+on a few hundred overlapping labels is easily 0.05, so a draw at 0.42 looks exactly like a leak
+while being nothing. It is now a proper permutation test: ten draws, the mean checked against
+chance, and the fraction reaching the baseline reported as a p-value.
+
+**A backfill was invisible to every historical query.** Stamped `ingestTime = now`, the
+point-in-time filter correctly reported that nothing was knowable two weeks ago — so a research
+dataset built from freshly fetched history came back empty. That is the guarantee working, not
+failing, and the resolution is an explicit `'bar-close'` ingest policy: exchange OHLCV is not
+revised, so a closed candle was knowable when it closed regardless of when it was fetched. Valid
+only for non-revised sources, and documented as forbidden for macro and on-chain data, where it
+would recreate exactly the leak the vintage table prevents. Explicit rather than inferred, because
+the wrong answer here is silent.
+
+**OKX caps a page at 300 bars** — under two weeks of hourly data, which is not enough to label,
+split and walk forward over. The provider paginates backwards through `/history-candles`; verified
+at 1200 contiguous bars, zero gaps.
+
+### A correction
+
+I first asserted that fat-tailed, negatively skewed returns always deflate a Sharpe harder, and
+wrote a test for it. The test failed, and it was right to: below the expected-maximum Sharpe the
+relationship inverts, because a wider standard error means less confidence that a result is
+*under* the bar as much as over it. The test now checks the regime the metric is actually used in,
+and the reasoning is recorded next to it.
+
+### Not yet wired
+
+Meta-labelling is implemented and unit-tested but the walk-forward runner trains the primary only.
+Ensembling, calibration and sequence models are MVP36.
+
+**Tests:** 222 unit + 289 e2e = **511 passing**, against real PostgreSQL, Redis and live OKX data.
+
 ## MVP33 — Feature engine
 
 **Date:** 2026-08-15

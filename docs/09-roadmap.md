@@ -640,12 +640,56 @@ parallelism bought nothing and cost a flake.
 `docs/17` §3.2 and **not built** — they need data the platform does not ingest yet (MVP32 covers
 OHLCV only). They are absent rather than stubbed, so nothing reports a value it does not have.
 
-### MVP34 — Labelling and validation harness
-Triple-barrier labels resolved on the finest available path, meta-labelling, purged and embargoed
-cross-validation, sample weighting by uniqueness, walk-forward runner, trial counter.
-*Acceptance:* the negative controls behave correctly — shuffled labels destroy performance, and
-features shifted one bar into the future *improve* it. A harness that passes the shuffled-label
-control while failing the shifted-feature control has a leak and the milestone is not met.
+### MVP34 — Labelling and validation harness — ✅ done
+Triple-barrier labels, meta-labelling, purged and embargoed CV, uniqueness weights, walk-forward,
+deflated Sharpe against a harness-owned trial counter, PBO, and the negative controls. A
+regularised logistic regression ships as the mandatory baseline — without something to train, a
+control asserting "shuffling must destroy performance" cannot be run at all. 47 unit tests, 21 e2e.
+
+*Acceptance — met.* Both controls behave: permuting the labels centres the AUC on chance, and
+handing the model the next bar's features **improves** it. There is also a test of the detector
+itself — a dataset whose feature *is* the label fails the shifted-feature control with a
+"lookahead leak" verdict, so the control is shown catching the thing it exists for rather than
+merely passing on clean data.
+
+**Design decisions the tests pin:**
+
+- **An ambiguous bar resolves pessimistically.** One bar spanning both barriers with no finer path
+  to say which came first is assumed to be the stop. Assuming the target turns every violent bar
+  into a win, is worth an enormous amount of fictional performance, and is almost never noticed
+  because the resulting curve looks merely very good.
+- **Timeouts are dropped, not folded into one side.** Calling a timeout "not up" teaches the model
+  that a flat market is a short.
+- **Barriers are sized from bars strictly before entry** — including the entry bar's own return
+  would size the barrier using the move it is about to measure.
+- **The trial counter is append-only and scoped.** A counter that can be decremented is not a
+  counter, and deleting a disappointing run is precisely what the deflated Sharpe prices in.
+- **The verdict is written to decline.** On a synthetic random walk it says so, in words.
+
+**Three fixes found by the tests:**
+
+1. **The shuffled-label control was not a test.** A single permutation is one draw from the null
+   distribution; comparing it to a fixed threshold fails on ordinary noise, since AUC's standard
+   error on a few hundred overlapping labels is easily 0.05. It is now a real permutation test —
+   ten draws, the mean checked against chance, and a p-value against the baseline.
+2. **A backfill was invisible to every historical query.** Stamped `ingestTime = now`, the
+   point-in-time filter correctly reported that nothing was knowable two weeks ago, so a research
+   dataset built from fresh history came back empty. Resolved with an explicit `'bar-close'`
+   ingest policy, valid **only** for non-revised sources like exchange OHLCV and documented as
+   forbidden for macro and on-chain data. Explicit rather than inferred, because the wrong answer
+   here is silent.
+3. **OKX caps a page at 300 bars**, which is under two weeks of hourly data — not enough to label,
+   split and walk forward over. The provider now paginates backwards through `/history-candles`;
+   verified at 1200 contiguous bars with zero gaps.
+
+*A correction to my own reasoning:* I first asserted that fat-tailed, negatively skewed returns
+always deflate a Sharpe harder, and wrote a test for it that failed. Below the expected-maximum
+Sharpe the relationship inverts, correctly — wider standard error means less confidence that the
+result is *under* the bar. The test now checks the regime the metric is actually used in.
+
+*Deferred:* the meta-labelling path is implemented and unit-tested but not yet wired into the
+walk-forward runner, which trains the primary only. Sequence models, ensembling and calibration
+are MVP36.
 
 ### MVP35 — Event-driven backtester
 Replay clock with a data view that structurally cannot return the future; fees, spread,
