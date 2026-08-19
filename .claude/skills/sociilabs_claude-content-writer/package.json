@@ -1,0 +1,55 @@
+{
+  "name": "claude-content-writer",
+  "version": "2.4.1",
+  "description": "Professional content generation system with GSD-style phased workflow, integrated SEO optimization (claude-seo), and anti-AI auditing (humanizer). Features URL-based profile creation with automatic tone detection and comprehensive brand questionnaire. Generates blog articles, social media posts (LinkedIn, Facebook, Twitter, Instagram), email content (newsletters, campaigns, sequences), web content (landing pages, product pages, web pages), sales content (sales funnels, case studies, testimonials, product descriptions), and SEO metadata using best-in-class copywriting frameworks (AIDA, PAS, BAB, LEMA, CONVERT). All content sounds human — not AI-generated.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sociilabs/claude-content-writer"
+  },
+  "homepage": "https://github.com/sociilabs/claude-content-writer#readme",
+  "bugs": {
+    "url": "https://github.com/sociilabs/claude-content-writer/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "claude-skill",
+    "content-writing",
+    "blog",
+    "linkedin",
+    "facebook",
+    "twitter",
+    "instagram",
+    "social-media",
+    "newsletter",
+    "seo",
+    "metadata",
+    "ai-writing",
+    "humanizer",
+    "content-research",
+    "profile-management"
+  ],
+  "author": "Sociilabs",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js",
+    "verify": "node scripts/verify-writer-commands.js",
+    "lint:ste": "node scripts/ste-lint.js",
+    "build:adapters": "node scripts/build-adapter-knowledge.js --target=all",
+    "ship": "node scripts/ship.js"
+  },
+  "files": [
+    "README.md",
+    "CHANGELOG.md",
+    "skills/",
+    "references/",
+    "scripts/",
+    "docs/"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "claude-content-writer": "^2.0.1"
+  }
+}
