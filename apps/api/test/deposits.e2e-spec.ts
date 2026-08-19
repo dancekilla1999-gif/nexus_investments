@@ -173,7 +173,17 @@ describe('Deposits (e2e)', () => {
     await redis.flushdb();
     await prisma.chain.update({
       where: { id: chainId },
-      data: { lastScannedBlock: null, nextDerivationIndex: 0 },
+      // Also re-asserts explorerUrlTemplate every test, not just in beforeAll's upsert: the
+      // `ethereum` chain key is shared reference data across several other e2e spec files
+      // (investment-accounting/-allocation/-dealing/-fees/-marketplace, nav — resetDatabase()
+      // deliberately does not truncate `chains`), and none of them set explorerUrlTemplate in
+      // their own upsert. Whichever spec file's beforeAll runs first wins Prisma upsert's
+      // `create` branch; every later file's upsert on the same key only hits `update`, which
+      // never touches a field it doesn't list. Depending on jest's file ordering, this row could
+      // reach this test with explorerUrlTemplate already null — order-dependent flakiness, not a
+      // production bug. Asserting it here every test makes this suite's own passing not depend
+      // on which other file happened to run first.
+      data: { lastScannedBlock: null, nextDerivationIndex: 0, explorerUrlTemplate: 'https://sepolia.etherscan.io/tx/{txHash}' },
     });
     await prisma.user.upsert({
       where: { id: PLATFORM_SYSTEM_USER_ID },

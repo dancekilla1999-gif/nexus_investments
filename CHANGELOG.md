@@ -1,5 +1,47 @@
 # Changelog
 
+## Security review + fixes — Auth timing side-channel, deposits e2e fixture order
+
+**Date:** 2026-08-19
+
+A security-review pass over `auth`, `ledger`, `wallet`, `deposits` and `common/crypto` — the
+modules CLAUDE.md's money/keys rules bind hardest — found one real issue and confirmed the rest of
+those modules sound (parameterised `$queryRaw`, argon2id password hashing, refresh-token rotation
+with replay detection, xpub-only custody with signing kept behind `SigningProvider`, IDOR-safe
+`userId`-from-JWT throughout wallet/deposits, CORS/CSP/helmet configured correctly, no hardcoded
+secrets, ledger rejecting zero-amount legs as defense in depth beneath the DTO validation).
+
+### Login was not actually constant-time
+
+`login()` read `user ? await verifyPassword(...) : false` — a comment two lines above claimed
+"constant-shaped response whether the email exists or not," but a missing user skipped the
+argon2id verify entirely (microseconds) while a real one always paid the full
+`memoryCost=19456, timeCost=2` cost (tens of milliseconds). Same 401 body either way; very
+different latency — enough to enumerate registered emails by timing `POST /auth/login`.
+
+`password.util.ts` gains `verifyPasswordConstantTime()`: always runs a full argon2id verify, against
+a fixed, lazily-memoized placeholder hash when there is no real user, before unconditionally
+returning `false` on that path. A new invariant test measures the mean cost of the no-account path
+against a real-account wrong-password path over several iterations and asserts they land within 3x
+of each other — loose enough not to flake, tight enough to catch the >100x gap the bug produced.
+
+### A flaky e2e assertion, caused by the test fixtures, not the code
+
+`deposits.e2e-spec.ts`'s "lists deposits with confirmation progress and an explorer link" failed
+intermittently: `explorerUrl` came back `null`. `deposits.service.ts` was correct — the actual
+cause is that six other e2e spec files (`investment-accounting`, `-allocation`, `-dealing`,
+`-fees`, `-marketplace`, `nav`) all `upsert` the *same* `ethereum`-keyed `Chain` row as shared
+reference data (`resetDatabase()` deliberately does not truncate `chains`, `assets`, etc. — see
+`test/utils/reset-database.ts`), and none of them set `explorerUrlTemplate`. Whichever spec file's
+`beforeAll` reaches that row first wins Prisma `upsert`'s `create` branch; every later file's
+`upsert` on the same key only takes the `update` branch, which never touches a field it doesn't
+list. Depending on jest's file ordering, `deposits.e2e-spec.ts` could inherit a row that was
+created without `explorerUrlTemplate` ever being set. Fixed by re-asserting the field in
+`deposits.e2e-spec.ts`'s own `beforeEach`, so this suite's outcome no longer depends on which other
+file happened to run first.
+
+**Tests:** 255 unit (251 + 4 new), 295 e2e — all green, run against live PostgreSQL + Redis.
+
 ## MVP35 — Event-driven backtester
 
 **Date:** 2026-08-19
