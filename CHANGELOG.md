@@ -1,5 +1,99 @@
 # Changelog
 
+## MVP18 — Manager Trading Terminal
+
+**Date:** 2026-08-20
+
+AUM overview, per-strategy positions and exposure, and order placement (MARKET, LIMIT,
+STOP/SL-TP) for assigned traders and managers, plus the assignment table that grant/revoke
+authority — the acceptance gate ("a trader assigned to strategy A cannot trade strategy B", "no
+endpoint accepts an arbitrary transfer") is enforced against the live API in
+`test/manager-trading.e2e-spec.ts`, not asserted about the service in isolation.
+
+### No owner field on InvestmentStrategy, so authority is a grant
+
+`InvestmentStrategy` has never carried a creator/manager field — `UserRole.TRADER`'s own existing
+comment already said "explicitly assigned strategies only," but nothing recorded who. A new
+`StrategyAssignment` table (strategy, user, role, granted-by, soft `revokedAt`) is the one place
+that answers "may this caller trade this strategy," checked by every terminal route before it
+does anything else. Grant/revoke is ADMIN/SUPERADMIN-only — deliberately not `INVESTMENT_MANAGER`,
+even though that role creates the product elsewhere in this same codebase: creating a strategy is
+configuration authority, not the authority to hand someone else the right to move its pool's
+assets.
+
+### The dormant `Order`/`Market`/`Trade` trio doesn't fit, and reusing it would misrepresent what happens
+
+Schema-only since MVP1 with zero service usage, `Order` points at the superseded segregated
+`ManagedAccount` model (docs/12 §0.2 replaced it with pooled `InvestmentStrategy` in MVP11) and
+`Market` carries no `investmentStrategyId` at all. More fundamentally, those three model a fill
+against a real venue order book — which is MVP4/MVP22/MVP28, none of which exist yet. A new
+`StrategyOrder` model instead: `fromAsset`/`toAsset`/`fromQuantity`/`triggerPrice`, scoped to one
+strategy, honestly named for what it actually is — an internal pool rebalance, not an execution
+that happened somewhere external.
+
+### The ledger's own per-asset conservation rule ruled out the first design
+
+The obvious "swap asset A for asset B inside the pool" shape — one leg debiting A, one crediting B
+— cannot be posted at all: `LedgerService.post` requires every asset's legs to sum to zero
+independently (CLAUDE.md §2 rule 3), so a bare A→B conversion is structurally impossible, by
+design — it is exactly the invariant that stops value being fabricated out of a "trade." A real
+fill legitimately crosses the `EXTERNAL` custody boundary (asset A leaves to a venue, asset B
+arrives from one), but there is no real venue yet, and booking a fake `EXTERNAL` crossing would
+corrupt custody reconciliation with fictitious on-chain-vs-ledger deltas — the exact failure mode
+`SANDBOX_MINT` was already split out of `EXTERNAL` to prevent, in MVP2, for the same reason.
+
+The fix follows that precedent: a new contra-account, `SANDBOX_TRADE_EXECUTION`, structurally
+separate from `EXTERNAL` and exempt from the non-negative balance constraint alongside it. A fill
+posts four legs — pool debits A, `SANDBOX_TRADE_EXECUTION` mirrors it; `SANDBOX_TRADE_EXECUTION`
+debits B, pool credits it — each asset balancing to zero on its own, entirely within one
+`LedgerTransactionType.TRADE` posting. `TradingService.placeOrder` refuses to run at all outside
+sandbox mode (`PLATFORM_MODE=live` gets a flat `SANDBOX_ONLY`, mirroring
+`WalletService.faucet`) — MVP18 ships a genuinely working *paper-trading* terminal now, honestly
+labelled, rather than either faking a real execution or recording orders that would sit forever
+un-fillable in live mode looking like a working feature that silently does nothing.
+
+### LIMIT and STOP (SL/TP) via a scheduled sweep, not a matching engine
+
+MARKET fills immediately against `MarkRegistry`'s current price — the same source `NavService`
+prices the pool with, so "what is this worth" never has two answers. LIMIT (take-profit shape)
+and STOP (stop-loss shape) persist `PENDING` and are picked up by `TradingService`'s own scheduled
+sweep (`ORDER_SWEEP_INTERVAL_MS`, disable via `ORDER_SWEEP_DISABLED` — same
+bootstrap/`setInterval`/`unref` pattern as `FeesService`'s accrual job), which fills once the
+achievable rate has crossed the trigger. A `NoMarkError`/`StaleMarkError` at either placement or
+sweep time leaves the order `PENDING` rather than rejecting it — a dead price feed is transient,
+not a reason to discard a standing order. An order that genuinely cannot be filled (the pool no
+longer holds enough of `fromAsset` by the time its trigger fires) is marked `REJECTED` with a
+reason — never silently dropped.
+
+### A migration-ordering trap, caught by testing a fresh apply rather than trusting the incremental one
+
+PostgreSQL will not let a new enum value be used within the transaction that adds it
+(CLAUDE.md §3), so `SANDBOX_TRADE_EXECUTION` was added in one migration file and the
+non-negative-constraint update that references it in a second — mirroring `SANDBOX_MINT`'s own
+two-file precedent exactly. Applying both together as a *newly-created pair* in one
+`prisma migrate deploy` invocation nonetheless failed with "invalid input value for enum": the
+enum addition's effect was not visible to the constraint migration moments later in the same
+deploy run, even though `_prisma_migrations` recorded the first migration as finished. What
+actually matters — a **fresh** database applying all 22 migrations from empty in one command,
+the real acceptance test for a migration history — passed cleanly on the first try. The dev/test
+databases used to build this milestone were fixed up by hand (the enum value applied directly,
+once, then the constraint migration deployed on its own); the committed migration files
+themselves were verified against a from-scratch database and need no such fix for anyone else.
+
+**Deliberately not built:** OCO orders (linked-order cancellation adds real complexity beyond
+what "SL/TP" strictly requires); real venue execution (MVP22); pre-trade risk gating on order
+placement (MVP19 — a manager can currently oversize a rebalance with nothing but the pool's own
+balance to stop them, same as `WalletService.transferInternal` has no risk engine in front of it
+yet either).
+
+**Tests:** 14 new e2e (authorization scoping, no-arbitrary-transfer proof, MARKET fill
+correctness, insufficient-balance rejection, a 10-way concurrent-order race left never negative,
+LIMIT/STOP sweep triggering in both directions, cancellation, assignment grant/revoke), against
+live PostgreSQL + Redis. No unit tests added beyond the existing suite — the fill math is a single
+`quantize(times())` call through already-unit-tested `amount.util.ts` helpers, and everything
+else is inherently an integration behaviour (authorization, ledger conservation, scheduled sweep
+timing) that a unit test would only re-assert with a mock.
+
 ## Security review + fixes — Auth timing side-channel, deposits e2e fixture order
 
 **Date:** 2026-08-19

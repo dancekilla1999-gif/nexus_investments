@@ -91,6 +91,12 @@ export const envSchema = z.object({
   /** Set to '1' to keep scheduled accrual from starting (tests drive it manually). */
   FEE_ACCRUAL_DISABLED: z.string().optional(),
 
+  // ── Manager Trading Terminal (MVP18) ──
+  /** How often PENDING LIMIT/STOP strategy orders are checked against current marks. */
+  ORDER_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  /** Set to '1' to keep the scheduled sweep from starting (tests drive it manually). */
+  ORDER_SWEEP_DISABLED: z.string().optional(),
+
   // ── AI data platform (MVP32) — docs/17 ──
   /**
    * Pairs the ingestion loop pulls. Deliberately config, not a hardcoded list: the scanned

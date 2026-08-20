@@ -454,10 +454,43 @@ was running them in parallel, so they wiped each other — producing 143 mislead
 `jest-e2e.json` rather than passed on the command line, so a green run means something however
 the suite is invoked.
 
-### MVP18 — Manager Trading Terminal
+### MVP18 — Manager Trading Terminal — ✅ done
 AUM overview, per-strategy capital, positions, order entry, SL/TP, exposure and risk panels.
-*Acceptance:* the terminal has no endpoint that accepts an arbitrary transfer; a trader assigned
-to strategy A cannot trade strategy B.
+*Acceptance — met.* No endpoint accepts an arbitrary transfer (`PlaceOrderDto` has no field for a
+destination account, `forbidNonWhitelisted` rejects one if sent, and both ledger legs of a fill
+are computed server-side, staying inside the strategy's own pool — proven, not just shaped, by an
+e2e test reading the posted transaction's own legs). A trader assigned to strategy A gets a 403
+against strategy B, proven against the live API, not asserted about the service.
+
+A new `StrategyAssignment` table is the one place that answers "may this caller trade this
+strategy" — `InvestmentStrategy` has no creator/owner field for authority to be implied through.
+Grant/revoke is ADMIN/SUPERADMIN-only, deliberately not `INVESTMENT_MANAGER`.
+
+**No `ExecutionVenue` exists yet (MVP22), so every fill is honestly a simulated one.** The
+schema's dormant `Order`/`Market`/`Trade` trio (zero service usage since MVP1) models a fill
+against a real venue order book and was not reused — a new `StrategyOrder` model instead, scoped
+to one strategy's `fromAsset`/`toAsset` swap. The ledger's own per-asset conservation rule (every
+asset's legs must independently sum to zero) rules out a bare "convert A to B" posting entirely; a
+real fill would cross the `EXTERNAL` custody boundary, but faking that crossing with no real venue
+would corrupt custody reconciliation — the same reason `SANDBOX_MINT` was split out of `EXTERNAL`
+in MVP2. A new contra-account, `SANDBOX_TRADE_EXECUTION`, gets the same treatment, and order
+placement is refused outright outside sandbox mode (`WalletService.faucet`'s own pattern) — a
+genuinely working paper-trading terminal now, not a fake execution or an order that would sit
+forever un-fillable in live mode looking like it works.
+
+MARKET fills immediately against `MarkRegistry`'s price. LIMIT (take-profit shape) and STOP
+(stop-loss shape) persist `PENDING` and fill via a scheduled sweep (same
+bootstrap/`setInterval`/`unref` pattern as `FeesService`'s fee accrual job) once the achievable
+rate crosses the trigger.
+
+*Deliberately not built:* OCO orders (linked-order cancellation is real complexity beyond what
+SL/TP strictly requires); real venue execution (MVP22); pre-trade risk gating on order size
+(MVP19 — same gap `WalletService.transferInternal` already has today).
+
+**Tests:** 14 e2e against live PostgreSQL + Redis — authorization scoping, the no-arbitrary-
+transfer proof, MARKET fill correctness, insufficient-balance rejection, a 10-way concurrent-order
+race left never negative, LIMIT/STOP sweep triggering both directions, cancellation, and
+assignment grant/revoke.
 
 ### MVP19 — Risk Engine
 The full pre-trade pipeline for **both** modes, emergency controls, dual-control on limit

@@ -6,13 +6,37 @@ import { DealingService } from './dealing.service';
 import { FeesService } from './fees.service';
 import { InvestmentsController } from './investments.controller';
 import { InvestmentStrategiesService } from './investment-strategies.service';
+import { ManagerTradingController } from './manager-trading.controller';
 import { MyInvestmentsController } from './my-investments.controller';
+import { StrategyAssignmentsService } from './strategy-assignments.service';
 import { SubscriptionsService } from './subscriptions.service';
+import { TradingService } from './trading.service';
 
 @Module({
   imports: [NavModule],
-  controllers: [InvestmentsController, MyInvestmentsController, AdminInvestmentsController],
-  providers: [InvestmentStrategiesService, SubscriptionsService, DealingService, AllocationService, FeesService],
-  exports: [InvestmentStrategiesService, SubscriptionsService, DealingService, AllocationService, FeesService],
+  controllers: [
+    InvestmentsController,
+    MyInvestmentsController,
+    AdminInvestmentsController,
+    ManagerTradingController,
+  ],
+  providers: [
+    InvestmentStrategiesService,
+    SubscriptionsService,
+    DealingService,
+    AllocationService,
+    FeesService,
+    StrategyAssignmentsService,
+    TradingService,
+  ],
+  exports: [
+    InvestmentStrategiesService,
+    SubscriptionsService,
+    DealingService,
+    AllocationService,
+    FeesService,
+    StrategyAssignmentsService,
+    TradingService,
+  ],
 })
 export class InvestmentsModule {}

@@ -11,13 +11,15 @@ import {
 
 /**
  * Contra-accounts: the debit side of a credit to a user, negative by construction and never
- * owned by or visible to a user. Mirrors the CHECK constraint in migration
- * 20260814183100_sandbox_mint_non_negative_exemption — if one gains a member the other must too,
- * or postings will pass here and be rejected at COMMIT.
+ * owned by or visible to a user. Mirrors the CHECK constraint in migrations
+ * 20260814183100_sandbox_mint_non_negative_exemption and
+ * 20260819235600_sandbox_trade_execution_non_negative_exemption — if this set gains a member the
+ * constraint must too, or postings will pass here and be rejected at COMMIT.
  */
 const CONTRA_ACCOUNT_TYPES: ReadonlySet<LedgerAccountType> = new Set([
   LedgerAccountType.EXTERNAL,
   LedgerAccountType.SANDBOX_MINT,
+  LedgerAccountType.SANDBOX_TRADE_EXECUTION,
 ]);
 
 /**

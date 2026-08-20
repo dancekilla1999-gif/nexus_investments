@@ -117,6 +117,10 @@ model User {
   subscriptionRequests SubscriptionRequest[]
   redemptionRequests   RedemptionRequest[]
 
+  // Manager Trading Terminal (MVP18)
+  strategyAssignments StrategyAssignment[]
+  strategyOrders      StrategyOrder[]
+
   @@index([email])
   @@map("users")
 }
@@ -402,16 +406,18 @@ model Asset {
   isEnabled       Boolean   @default(true)
   coingeckoId     String?
 
-  walletAddresses        WalletAddress[]
-  blockchainTransactions BlockchainTransaction[]
-  ledgerAccounts         LedgerAccount[]
-  balances               Balance[]
-  deposits               Deposit[]
-  withdrawals            Withdrawal[]
-  marketsAsBase          Market[]                @relation("MarketBaseAsset")
-  marketsAsQuote         Market[]                @relation("MarketQuoteAsset")
-  p2pAds                 P2PAd[]
-  investmentStrategies   InvestmentStrategy[]
+  walletAddresses           WalletAddress[]
+  blockchainTransactions    BlockchainTransaction[]
+  ledgerAccounts            LedgerAccount[]
+  balances                  Balance[]
+  deposits                  Deposit[]
+  withdrawals               Withdrawal[]
+  marketsAsBase             Market[]                @relation("MarketBaseAsset")
+  marketsAsQuote            Market[]                @relation("MarketQuoteAsset")
+  p2pAds                    P2PAd[]
+  investmentStrategies      InvestmentStrategy[]
+  strategyOrdersAsFromAsset StrategyOrder[]         @relation("StrategyOrderFromAsset")
+  strategyOrdersAsToAsset   StrategyOrder[]         @relation("StrategyOrderToAsset")
 
   @@unique([chainId, symbol])
   @@map("assets")
@@ -555,6 +561,16 @@ enum LedgerAccountType {
   /// Fees the platform has earned and settled. Value arrives here only via
   /// FEE_CRYSTALLISATION or a TRADE's venue/execution fee leg.
   PLATFORM_REVENUE
+
+  /// The Manager Trading Terminal's (MVP18) contra-account for a *simulated* fill: no
+  /// ExecutionVenue exists yet (that is MVP22), so a strategy order cannot honestly cross the
+  /// EXTERNAL boundary — nothing really left custody to reach a venue. Kept structurally
+  /// separate from EXTERNAL for exactly the reason SANDBOX_MINT was split out of it: mixing
+  /// simulated value into the account custody reconciliation compares against on-chain holdings
+  /// would make every terminal fill read as a custody shortfall. TradingService refuses to fill
+  /// an order through this account outside sandbox mode — see WalletService.faucet for the same
+  /// pattern.
+  SANDBOX_TRADE_EXECUTION
 }
 
 model LedgerAccount {
@@ -892,11 +908,11 @@ model DataQualityFailure {
 /// Append-only, and the hash is over sorted keys with 17-significant-digit numbers, so the
 /// comparison depends on content rather than on serialisation order.
 model FeatureVectorRecord {
-  id        String   @id @default(cuid())
-  symbol    String
-  timeframe String
+  id          String   @id @default(cuid())
+  symbol      String
+  timeframe   String
   /// The point-in-time instant this vector was computed for.
-  asOf      DateTime
+  asOf        DateTime
   /// The anchor bar. Distinct from asOf: several instants inside one bar produce the same bar.
   barOpenTime DateTime
 
@@ -940,18 +956,18 @@ model ResearchExperiment {
   /// tells you nothing about how hard you looked at ETH 4h.
   scope String
 
-  symbol    String
-  timeframe String
+  symbol          String
+  timeframe       String
   /// Barrier parameters and horizon, serialised. Part of the scope: changing the label is a new
   /// question, not another attempt at the same one.
   labelDefinition String
 
   /// The configuration tried, for reproducibility.
-  config Json
+  config         Json
   /// Out-of-sample AUC, or null when the run produced none.
-  auc    Float?
+  auc            Float?
   /// Out-of-sample Sharpe of the resulting returns, if the run produced trades.
-  sharpe Float?
+  sharpe         Float?
   /// Whether every negative control passed. A run that failed one is still counted — looking is
   /// what costs, and a failed control does not un-look.
   controlsPassed Boolean @default(false)
@@ -1671,6 +1687,10 @@ model InvestmentStrategy {
   redemptions    RedemptionRequest[]
   ledgerAccounts LedgerAccount[]
 
+  // Manager Trading Terminal (MVP18)
+  traderAssignments StrategyAssignment[]
+  orders            StrategyOrder[]
+
   @@index([status])
   @@map("investment_strategies")
 }
@@ -1859,4 +1879,112 @@ model RedemptionRequest {
   @@index([strategyId, status])
   @@index([userId])
   @@map("redemption_requests")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Manager Trading Terminal (MVP18, docs/09-roadmap.md)
+// ─────────────────────────────────────────────────────────────────────────
+
+enum StrategyAssignmentRole {
+  /// Same trading authority as TRADER, plus the strategy owner-of-record for the terminal's
+  /// purposes. Configuring the product itself (fees, limits) still goes through
+  /// InvestmentStrategiesService, gated by UserRole, not by this table.
+  MANAGER
+  /// Places orders only (UserRole.TRADER's own comment: "explicitly assigned strategies only.
+  /// Cannot change limits or move value.").
+  TRADER
+}
+
+/// Who may trade a strategy's pool through the terminal, and who granted it. `InvestmentStrategy`
+/// deliberately carries no owner/creator field of its own: authority to trade is a grant, not
+/// implied by having created the product, so "a trader assigned to strategy A cannot trade
+/// strategy B" (MVP18 acceptance) is one check against one table for every caller, including the
+/// strategy's own manager. Revocation is soft (`revokedAt`) rather than a delete, so the
+/// terminal's own audit trail — who could trade this, and when — survives a grant being pulled,
+/// the same reasoning the rest of this schema applies to money, applied here to authorization.
+model StrategyAssignment {
+  id         String                 @id @default(cuid())
+  strategyId String
+  strategy   InvestmentStrategy     @relation(fields: [strategyId], references: [id])
+  userId     String
+  user       User                   @relation(fields: [userId], references: [id])
+  role       StrategyAssignmentRole
+
+  assignedByUserId String
+  assignedAt       DateTime  @default(now())
+  revokedAt        DateTime?
+
+  @@unique([strategyId, userId])
+  @@index([userId])
+  @@map("strategy_assignments")
+}
+
+enum StrategyOrderType {
+  /// Fills immediately against the current mark.
+  MARKET
+  /// Fills once the achievable rate rises to at least `triggerPrice` — take-profit shape.
+  LIMIT
+  /// Fills at market once the achievable rate falls to or below `triggerPrice` — stop-loss shape.
+  STOP
+}
+
+enum StrategyOrderStatus {
+  /// LIMIT/STOP only: recorded, waiting for the sweep to find its trigger crossed.
+  PENDING
+  FILLED
+  CANCELLED
+  /// Failed at placement or at fill time (e.g. the pool no longer holds enough of `fromAsset`)
+  /// — never silently dropped.
+  REJECTED
+}
+
+/// A pool rebalance an assigned trader/manager places through the terminal — swap one asset the
+/// strategy's STRATEGY_POOL holds for another, priced off the same MarkRegistry NavService prices
+/// the pool with, so "what is this worth" never has two answers. Deliberately not the dormant
+/// `Order`/`Market`/`Trade` trio (schema-only since MVP1, zero service usage): those model a fill
+/// against a real venue order book, which is MVP4/MVP22/MVP28 — none of which exist yet — and
+/// reusing them here would misrepresent an internal, mark-priced pool swap as an execution that
+/// happened somewhere external. Both ledger legs of a fill stay inside the strategy's own
+/// STRATEGY_POOL: see `LedgerTransactionType.TRADE`'s own doc comment ("TRADE stays
+/// pool-internal").
+model StrategyOrder {
+  id         String             @id @default(cuid())
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+
+  placedByUserId String
+  placedBy       User   @relation(fields: [placedByUserId], references: [id])
+
+  fromAssetId String
+  fromAsset   Asset  @relation("StrategyOrderFromAsset", fields: [fromAssetId], references: [id])
+  toAssetId   String
+  toAsset     Asset  @relation("StrategyOrderToAsset", fields: [toAssetId], references: [id])
+
+  type   StrategyOrderType
+  status StrategyOrderStatus @default(PENDING)
+
+  /// Amount of `fromAsset` the order sells. Never re-derived from a fill — the trader's original
+  /// instruction, unchanged regardless of what price it eventually fills at.
+  fromQuantity Decimal @db.Decimal(36, 18)
+
+  /// LIMIT/STOP only — the rate (units of toAsset per 1 fromAsset) that triggers a fill. Null on
+  /// MARKET, which has nothing to wait for.
+  triggerPrice Decimal? @db.Decimal(36, 18)
+
+  /// Set at fill: the rate actually achieved and the resulting toAsset amount. A market that
+  /// moved between placement and fill means these can differ from a naive
+  /// `fromQuantity * triggerPrice` — recording what happened, not what was asked for.
+  filledRate          Decimal? @db.Decimal(36, 18)
+  toQuantity          Decimal? @db.Decimal(36, 18)
+  ledgerTransactionId String?
+  rejectionReason     String?
+
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  filledAt       DateTime?
+  cancelledAt    DateTime?
+
+  @@index([strategyId, status])
+  @@index([status, type])
+  @@map("strategy_orders")
 }

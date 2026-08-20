@@ -11,7 +11,9 @@ import { FeesService } from './fees.service';
 import { AllocationService } from './allocation.service';
 import { SetStrategyStatusDto } from './dto/set-status.dto';
 import { UpdateStrategyDto } from './dto/update-strategy.dto';
+import { AssignTraderDto } from './dto/strategy-assignment.dto';
 import { InvestmentStrategiesService } from './investment-strategies.service';
+import { StrategyAssignmentsService } from './strategy-assignments.service';
 
 /**
  * Strategy administration. Separate namespace and separate guard stack from the investor API
@@ -30,6 +32,7 @@ export class AdminInvestmentsController {
     private readonly dealing: DealingService,
     private readonly allocation: AllocationService,
     private readonly fees: FeesService,
+    private readonly assignments: StrategyAssignmentsService,
   ) {}
 
   @Get()
@@ -125,5 +128,34 @@ export class AdminInvestmentsController {
     @Body() dto: SetStrategyStatusDto,
   ) {
     return this.strategies.setStatus(user.sub, id, dto.status);
+  }
+
+  // ── Manager Trading Terminal: who may trade this strategy (MVP18) ────────
+  //
+  // Grant/revoke is ADMIN+ only, never INVESTMENT_MANAGER, even though this controller's own
+  // class-level @Roles includes it for the routes above: creating a product is configuration
+  // authority, not the authority to hand someone else the right to move its pool's assets, and
+  // there is no "owner" field on InvestmentStrategy for a manager to be implicitly trusted
+  // through (see StrategyAssignment's own doc comment).
+
+  @Get(':id/assignments')
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
+  @ApiOperation({ summary: 'Who may currently trade this strategy through the terminal' })
+  listAssignments(@Param('id') id: string) {
+    return this.assignments.list(id);
+  }
+
+  @Post(':id/assignments')
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
+  @ApiOperation({ summary: 'Grant a user MANAGER or TRADER rights on this strategy' })
+  assign(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Body() dto: AssignTraderDto) {
+    return this.assignments.assign(id, dto.userId, dto.role, user.sub);
+  }
+
+  @Post(':id/assignments/:userId/revoke')
+  @Roles(UserRole.ADMIN, UserRole.SUPERADMIN)
+  @ApiOperation({ summary: 'Revoke a user\'s trading rights on this strategy' })
+  revoke(@CurrentUser() user: JwtPayload, @Param('id') id: string, @Param('userId') userId: string) {
+    return this.assignments.revoke(id, userId, user.sub);
   }
 }

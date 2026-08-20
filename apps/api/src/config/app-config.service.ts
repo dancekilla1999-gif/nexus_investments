@@ -153,6 +153,16 @@ export class AppConfigService {
     return this.config.get('FEE_ACCRUAL_DISABLED', { infer: true }) !== '1';
   }
 
+  // ── Manager Trading Terminal ────────────────────────────────────────────
+
+  get orderSweepIntervalMs() {
+    return this.config.get('ORDER_SWEEP_INTERVAL_MS', { infer: true });
+  }
+
+  get orderSweepEnabled() {
+    return this.config.get('ORDER_SWEEP_DISABLED', { infer: true }) !== '1';
+  }
+
   // ── AI data platform ────────────────────────────────────────────────────
 
   get marketDataSymbols(): string[] {
