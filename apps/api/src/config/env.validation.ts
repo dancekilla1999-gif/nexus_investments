@@ -97,6 +97,12 @@ export const envSchema = z.object({
   /** Set to '1' to keep the scheduled sweep from starting (tests drive it manually). */
   ORDER_SWEEP_DISABLED: z.string().optional(),
 
+  // ── Risk Engine (MVP19) ──
+  /** How often every live strategy is re-checked for a drawdown breach, independent of trading. */
+  RISK_DRAWDOWN_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+  /** Set to '1' to keep the scheduled drawdown sweep from starting (tests drive it manually). */
+  RISK_DRAWDOWN_SWEEP_DISABLED: z.string().optional(),
+
   // ── AI data platform (MVP32) — docs/17 ──
   /**
    * Pairs the ingestion loop pulls. Deliberately config, not a hardcoded list: the scanned

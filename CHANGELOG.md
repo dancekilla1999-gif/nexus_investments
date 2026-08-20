@@ -1,5 +1,85 @@
 # Changelog
 
+## MVP19 — Risk Engine
+
+**Date:** 2026-08-20
+
+The pre-trade pipeline in front of `TradingService`'s fills, a real 10%-drawdown circuit breaker,
+a daily loss limit, an asset mandate (allow-list), a global emergency pause, and dual control on
+risk-limit changes.
+
+### Only checking what there is real data for
+
+docs/12 §9 specifies eight pipeline stages. Two have no real data behind them yet and are not
+implemented: **liquidity** ("can this size actually be filled here?") needs order-book depth
+from a real venue (MVP22); **volatility / correlated exposure** needs a return-correlation
+history this platform does not ingest yet (MVP39). A **leverage** check exists in the pipeline
+shape but is a documented no-op: every position is definitionally spot (1x) until a margin
+mechanism exists, so checking a fixed 1x against `maxLeverageBps` either always passes or always
+fails for a reason that has nothing to do with the order — worse than not checking. Implemented:
+permission (reused from MVP18's `StrategyAssignmentsService`), mandate, exposure concentration,
+drawdown/circuit breaker, and daily loss limit.
+
+### The circuit breaker distinguishes de-risking from risk-increasing
+
+A `CIRCUIT_BROKEN` strategy still allows an order that moves back toward the strategy's own base
+asset — docs/12 §9 blocks only "new risk-increasing orders," and a circuit breaker that also
+freezes the ability to reduce exposure would make a bad situation worse, not safer. Every other
+order is refused. No forced liquidation by default, per the same section: market-selling into a
+drawdown can realise a worse price than an orderly close.
+
+Two check sites, one method: `checkDrawdown` runs from the pre-trade pipeline (order-triggered)
+and from `RiskEngineService`'s own scheduled sweep (continuous — `NavService.revalueAll`'s own
+doc comment already anticipated this: "so a drawdown breach is noticed when it happens rather
+than at the next deal"). Tripping an already-broken strategy again is a no-op, not a second
+`RiskEvent` — verified by a test that trips it twice.
+
+### A real gap closed: `maxDrawdownBps` could bypass dual control entirely
+
+Building dual control surfaced that `UpdateStrategyDto` — unrelated to this milestone — already
+let a strategy's drawdown ceiling be changed via a plain `PATCH`, with no second approver, whenever
+the strategy had zero current investors (the existing `hasInvestors` lock only guards strategies
+with capital already in them). `maxDrawdownBps` is now creation-only on that DTO; every change
+after creation must go through `RiskLimitsService`, which the DB itself backs with a CHECK
+constraint (`approvedByUserId != proposedByUserId`) so the guarantee holds even bypassing the
+service — verified with a raw-SQL test per CLAUDE.md §4.1. (`maxAssetExposureBps`,
+`maxLeverageBps` and `dailyLossLimitBps` were never exposed on the create/update DTOs at all, so
+they had no equivalent gap.)
+
+### An exposure-check bug the tests caught before commit
+
+The first cut priced the value an order would add to a holding as
+`fromQuantity × (fromAsset→toAsset rate)` — a quantity of `toAsset`, not a value, compared
+directly against a base-asset-denominated `poolNav`. Off by whatever `toAsset`'s own unit price
+happened to be — for WBTC against a USDC pool, off by a factor of 50,000. Fixed by pricing the
+value *given up* (`fromQuantity` of `fromAsset`, converted into the strategy's base asset)
+instead: a fair-value swap gives up and receives about the same base-asset value on both legs, so
+either side prices the same trade correctly, and every asset the pool could plausibly hold already
+has a base-asset rate (the pool could not have been valued to fund the order otherwise).
+
+### Role naming: docs/12 says `RISK_MANAGER`, the enum says `RISK_OPS`
+
+`UserRole` has carried `RISK_OPS` since MVP2 (already used to gate custody reconciliation).
+`RiskController` uses the existing enum value rather than adding a parallel role for the same
+seat — CLAUDE.md: "if code and a doc disagree, one of them is a bug — decide which and fix it."
+
+**Deliberately not built:** liquidity and volatility/correlated-exposure checks (no data yet);
+emergency liquidation / force-flatten (its own dual-authorisation machinery, and the riskiest,
+most special-cased action in docs/12 §9 — a larger piece than this milestone's pipeline); a
+restriction on which role may clear a `CIRCUIT_BROKEN` strategy back to `OPEN` (today any
+`INVESTMENT_MANAGER` can, via the same gated `open()` path OPEN already requires — docs/12 §8's
+role table lists pause/unpause as `RISK_MANAGER`'s power specifically, so a manager clearing their
+own tripped breaker is a real gap, just not one this milestone's order-blocking acceptance
+criteria required); withdrawal pause and automated-trading pause (no feature yet to gate — MVP3,
+MVP40).
+
+**Tests:** 20 new e2e against live PostgreSQL + Redis — one per pipeline check (mandate, exposure,
+drawdown, daily loss), the circuit breaker firing under a simulated 10%+ drawdown via both the
+order path and the standalone scheduled sweep, de-risking-while-broken, idempotent tripping,
+global pause, dual control (self-approval and self-rejection both refused, a third-party approval
+and rejection both working, cancellation, the platform ceiling, the DB-level backstop). Full
+suite: 255 unit + 329 e2e passing, tsc clean.
+
 ## MVP18 — Manager Trading Terminal
 
 **Date:** 2026-08-20

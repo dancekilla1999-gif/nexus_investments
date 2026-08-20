@@ -157,7 +157,7 @@ export class InvestmentStrategiesService {
         dealingFrequency: dto.dealingFrequency,
         mgmtFeeBps: dto.mgmtFeeBps,
         perfFeeBps: dto.perfFeeBps,
-        maxDrawdownBps: dto.maxDrawdownBps,
+        // maxDrawdownBps is deliberately absent — see UpdateStrategyDto's own doc comment.
         benchmarkSymbol: dto.benchmarkSymbol,
         tradingStrategyId: dto.tradingStrategyId,
       },
@@ -346,7 +346,7 @@ export class InvestmentStrategiesService {
     return [
       dto.mgmtFeeBps,
       dto.perfFeeBps,
-      dto.maxDrawdownBps,
+      // maxDrawdownBps is not on UpdateStrategyDto at all any more — see its own doc comment.
       dto.lockupDays,
       dto.redemptionNoticeDays,
       dto.dealingFrequency,

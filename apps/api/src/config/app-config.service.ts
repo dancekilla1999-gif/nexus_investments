@@ -163,6 +163,16 @@ export class AppConfigService {
     return this.config.get('ORDER_SWEEP_DISABLED', { infer: true }) !== '1';
   }
 
+  // ── Risk Engine ────────────────────────────────────────────────────────
+
+  get riskDrawdownSweepIntervalMs() {
+    return this.config.get('RISK_DRAWDOWN_SWEEP_INTERVAL_MS', { infer: true });
+  }
+
+  get riskDrawdownSweepEnabled() {
+    return this.config.get('RISK_DRAWDOWN_SWEEP_DISABLED', { infer: true }) !== '1';
+  }
+
   // ── AI data platform ────────────────────────────────────────────────────
 
   get marketDataSymbols(): string[] {

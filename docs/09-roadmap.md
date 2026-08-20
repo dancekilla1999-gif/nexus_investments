@@ -492,10 +492,32 @@ transfer proof, MARKET fill correctness, insufficient-balance rejection, a 10-wa
 race left never negative, LIMIT/STOP sweep triggering both directions, cancellation, and
 assignment grant/revoke.
 
-### MVP19 — Risk Engine
-The full pre-trade pipeline for **both** modes, emergency controls, dual-control on limit
-changes. *Acceptance:* every check blocks an order that violates it, proven per check; the 10%
-circuit breaker fires under a simulated drawdown.
+### MVP19 — Risk Engine — ✅ done
+The pre-trade pipeline in front of `TradingService`'s fills, emergency controls, dual-control on
+limit changes. *Acceptance — met.* Every implemented check blocks an order that violates it,
+proven per check; the 10% circuit breaker fires under a simulated drawdown, via both the
+order-triggered path and `RiskEngineService`'s own standalone scheduled sweep.
+
+Implemented: permission (reused from MVP18), mandate (asset allow-list), exposure concentration,
+drawdown/circuit breaker, daily loss limit, a global trading-pause kill switch, and dual control
+on risk-limit changes (a DB CHECK constraint backs the "approver ≠ proposer" rule, not only the
+service). **Not implemented, honestly:** liquidity and volatility/correlated-exposure checks (no
+order-book depth or return-correlation history exists yet to check against — MVP22, MVP39); a
+fixed 1x leverage check would always pass or always fail for a reason unrelated to the order,
+since no margin mechanism exists, so it is a documented no-op rather than a check against nothing;
+emergency liquidation (its own dual-authorisation machinery, deliberately deferred); withdrawal
+pause and automated-trading pause (no feature yet to gate — MVP3, MVP40).
+
+A circuit-broken strategy still permits de-risking (an order moving back toward the strategy's own
+base asset) — docs/12 §9 blocks only *risk-increasing* orders. Building dual control surfaced a
+real pre-existing gap: `maxDrawdownBps` could be changed via a plain strategy-update `PATCH`,
+without a second approver, on any strategy with zero current investors. It is now creation-only on
+`UpdateStrategyDto`; every change after creation goes through `RiskLimitsService`.
+
+**Tests:** 20 e2e against live PostgreSQL + Redis, one per pipeline check plus the circuit breaker
+(both paths), idempotent tripping, the global pause, and dual control (self-approval and
+self-rejection refused, third-party approval/rejection, cancellation, the platform ceiling, the
+DB-level backstop via a raw-SQL bypass test).
 
 ### MVP20 — Investor Reporting
 Monthly/trade/performance/fee/transaction statements and tax export, generated from ledger and

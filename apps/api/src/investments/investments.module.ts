@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { NavModule } from '../nav/nav.module';
+import { RiskModule } from '../risk/risk.module';
 import { AdminInvestmentsController } from './admin-investments.controller';
 import { AllocationService } from './allocation.service';
 import { DealingService } from './dealing.service';
@@ -13,7 +14,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { TradingService } from './trading.service';
 
 @Module({
-  imports: [NavModule],
+  imports: [NavModule, RiskModule],
   controllers: [
     InvestmentsController,
     MyInvestmentsController,

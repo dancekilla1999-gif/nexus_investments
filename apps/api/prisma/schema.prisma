@@ -258,9 +258,16 @@ enum RiskEventType {
   P2P_FRAUD_SIGNAL
   AML_FLAG
   LOGIN_ANOMALY
-  /// docs/10-managed-accounts-architecture.md §4 — a Managed Account breached its
-  /// maxDrawdownBps ceiling and was moved to CIRCUIT_BROKEN.
+  /// docs/10-managed-accounts-architecture.md §4 — the superseded segregated ManagedAccount
+  /// model's own circuit breaker (docs/12 §0.2). Kept only so historical rows still resolve to a
+  /// valid enum member; nothing writes this any more — see STRATEGY_CIRCUIT_BREAKER.
   MANAGED_ACCOUNT_CIRCUIT_BREAKER
+  /// The Risk Engine (MVP19) moved a pooled InvestmentStrategy to CIRCUIT_BROKEN: navPerUnit fell
+  /// to or below the strategy's own peak × (1 − maxDrawdownBps/10000).
+  STRATEGY_CIRCUIT_BREAKER
+  /// A pre-trade check (mandate, exposure, leverage, or daily loss limit) blocked an order.
+  /// Severity scales with which check and by how much — recorded in `details`.
+  STRATEGY_RISK_LIMIT_BREACH
   OTHER
 }
 
@@ -418,6 +425,7 @@ model Asset {
   investmentStrategies      InvestmentStrategy[]
   strategyOrdersAsFromAsset StrategyOrder[]         @relation("StrategyOrderFromAsset")
   strategyOrdersAsToAsset   StrategyOrder[]         @relation("StrategyOrderToAsset")
+  strategyAllowedIn         StrategyAllowedAsset[]
 
   @@unique([chainId, symbol])
   @@map("assets")
@@ -1622,6 +1630,13 @@ enum StrategyStatus {
   /// Existing investors kept, no new subscriptions.
   SOFT_CLOSED
   PAUSED
+  /// The Risk Engine's own doing (MVP19, docs/12 §9), never set by a manager: navPerUnit fell to
+  /// or below the strategy's own peak × (1 − maxDrawdownBps/10000). No new risk-increasing order
+  /// can be placed — no forced liquidation by default, since market-selling into a drawdown can
+  /// realise a worse price than an orderly close (docs/12 §9). Cleared only through the same
+  /// gated `open()` path OPEN itself requires, by RISK_OPS/ADMIN/SUPERADMIN — never by the
+  /// strategy's own manager, or a circuit breaker would not mean anything.
+  CIRCUIT_BROKEN
   WINDING_DOWN
   CLOSED
 }
@@ -1690,6 +1705,10 @@ model InvestmentStrategy {
   // Manager Trading Terminal (MVP18)
   traderAssignments StrategyAssignment[]
   orders            StrategyOrder[]
+
+  // Risk Engine (MVP19)
+  allowedAssets           StrategyAllowedAsset[]
+  riskLimitChangeRequests RiskLimitChangeRequest[]
 
   @@index([status])
   @@map("investment_strategies")
@@ -1987,4 +2006,89 @@ model StrategyOrder {
   @@index([strategyId, status])
   @@index([status, type])
   @@map("strategy_orders")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Risk Engine (MVP19, docs/12 §9, docs/09-roadmap.md)
+// ─────────────────────────────────────────────────────────────────────────
+
+/// An explicit per-strategy asset allow-list — the "mandate check" in the pre-trade pipeline
+/// (docs/12 §9: "is this asset/venue permitted for this strategy?"). A strategy with zero rows
+/// here has no mandate configured yet and every enabled asset is tradeable, matching MVP18's
+/// original behaviour and every strategy created before this milestone; adding the first row
+/// turns it into a real allow-list (the strategy's own baseAsset is always implicitly allowed —
+/// a strategy that could not hold cash in its own denomination could never settle a subscription).
+model StrategyAllowedAsset {
+  id         String             @id @default(cuid())
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+  assetId    String
+  asset      Asset              @relation(fields: [assetId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([strategyId, assetId])
+  @@map("strategy_allowed_assets")
+}
+
+enum RiskLimitField {
+  MAX_DRAWDOWN_BPS
+  MAX_ASSET_EXPOSURE_BPS
+  MAX_LEVERAGE_BPS
+  DAILY_LOSS_LIMIT_BPS
+}
+
+enum RiskLimitChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Dual control on risk-limit changes (docs/12 §8: "proposed by one role, approved by another,
+/// both recorded. A single compromised account cannot widen its own limits"). One field per
+/// request rather than a bundled diff — a single clear "what changed, who proposed it, who
+/// approved it" row, the same reasoning `FeeAccrual` and `NavSnapshot` apply to their own single
+/// purpose. `InvestmentStrategy`'s own four limit columns are only ever written by
+/// `RiskLimitsService.approve`, never directly by strategy configuration — see
+/// `InvestmentStrategiesService.create`/`update`, which reject these fields entirely once this
+/// milestone lands.
+model RiskLimitChangeRequest {
+  id         String             @id @default(cuid())
+  strategyId String
+  strategy   InvestmentStrategy @relation(fields: [strategyId], references: [id])
+
+  field    RiskLimitField
+  oldValue Int
+  newValue Int
+  status   RiskLimitChangeStatus @default(PENDING)
+
+  proposedByUserId String
+  proposedAt       DateTime @default(now())
+
+  approvedByUserId String?
+  approvedAt       DateTime?
+  rejectionReason  String?
+
+  @@index([strategyId, status])
+  @@map("risk_limit_change_requests")
+}
+
+/// Named, independently-toggleable kill switches (docs/12 §9: "global trading pause, per-strategy
+/// pause, withdrawal pause, automated-trading pause... each permissioned separately and each
+/// audited"). Per-strategy pause already exists as `StrategyStatus.PAUSED` and needs no new
+/// mechanism; withdrawal pause and automated-trading pause have no feature yet to gate (MVP3,
+/// MVP40) and are not keys used by anything today. Only `GLOBAL_TRADING_PAUSE` is live —
+/// `TradingService.placeOrder` refuses every order while it is active, regardless of strategy or
+/// assignment. A DB row rather than a Redis flag or an env var: it must survive a restart and a
+/// cache flush, and flipping it must never need a redeploy.
+model EmergencyControl {
+  /// Fixed keys, e.g. 'GLOBAL_TRADING_PAUSE' — see `EmergencyControlKey` in emergency-controls.service.ts.
+  key             String   @id
+  isActive        Boolean  @default(false)
+  reason          String?
+  updatedAt       DateTime @updatedAt
+  updatedByUserId String?
+
+  @@map("emergency_controls")
 }

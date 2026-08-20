@@ -28,6 +28,7 @@ import { NoMarkError, StaleMarkError, MarkRegistry } from '../nav/mark.registry'
 import { NavService } from '../nav/nav.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlaceOrderDto } from './dto/place-order.dto';
+import { RiskCheckFailedError, RiskEngineService } from '../risk/risk-engine.service';
 import { StrategyAssignmentsService } from './strategy-assignments.service';
 
 /** Strategy statuses a manager may still trade against. Matches the states with capital at risk. */
@@ -64,6 +65,7 @@ export class TradingService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly marks: MarkRegistry,
     private readonly config: AppConfigService,
     private readonly assignments: StrategyAssignmentsService,
+    private readonly riskEngine: RiskEngineService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -285,6 +287,24 @@ export class TradingService implements OnApplicationBootstrap, OnModuleDestroy {
    * safe to retry: the replayed post is a no-op and the row update just catches up.
    */
   private async attemptFill(order: StrategyOrder): Promise<StrategyOrder> {
+    try {
+      await this.riskEngine.checkOrder({
+        strategyId: order.strategyId,
+        fromAssetId: order.fromAssetId,
+        toAssetId: order.toAssetId,
+        fromQuantity: order.fromQuantity,
+      });
+    } catch (err) {
+      if (err instanceof RiskCheckFailedError) {
+        this.logger.warn(`Order ${order.id} blocked by risk engine (${err.checkCode}): ${err.message}`);
+        return this.prisma.strategyOrder.update({
+          where: { id: order.id },
+          data: { status: StrategyOrderStatus.REJECTED, rejectionReason: `${err.checkCode}: ${err.message}` },
+        });
+      }
+      throw err;
+    }
+
     let rate: Prisma.Decimal;
     try {
       const mark = await this.marks.requireMark(order.fromAssetId, order.toAssetId);
